@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Pursuit — Know your fit. Prove your value. Apply with purpose." />
+  <title>Pursuit</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <div class="brand">Pursuit</div>
+        <div class="tagline">Know your fit. Prove your value. Apply with purpose.</div>
+      </div>
+      <button id="openSettings" class="button ghost">Master Resume</button>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">JD → submission-ready application</div>
+        <h1>Decide faster. Position truthfully. Apply with confidence.</h1>
+        <p>
+          Paste a job description. Pursuit identifies what matters, evaluates your fit against
+          your verified resume, and creates an evidence-backed aligned draft.
+        </p>
+      </section>
+
+      <section class="workspace card">
+        <div class="section-heading">
+          <div>
+            <span class="step">1</span>
+            <h2>Paste the job description</h2>
+          </div>
+          <span class="privacy-note">Processed locally in your browser</span>
+        </div>
+
+        <label for="jdInput" class="sr-only">Job description</label>
+        <textarea id="jdInput" placeholder="Paste the complete job description here..."></textarea>
+
+        <div class="action-row">
+          <div id="resumeStatus" class="status warning">No master resume saved</div>
+          <button id="analyzeBtn" class="button primary">Analyze role</button>
+        </div>
+      </section>
+
+      <section id="results" class="results hidden">
+        <div class="decision-grid">
+          <article class="card decision-card">
+            <div class="label">Recommendation</div>
+            <div id="decisionBadge" class="decision-badge">—</div>
+            <p id="decisionReason" class="muted"></p>
+          </article>
+
+          <article class="card metric-card">
+            <div class="label">Recruiter screening likelihood</div>
+            <div id="recruiterScore" class="metric">—</div>
+            <div id="recruiterConfidence" class="confidence"></div>
+          </article>
+
+          <article class="card metric-card">
+            <div class="label">Hiring manager interest</div>
+            <div id="managerScore" class="metric">—</div>
+            <div id="managerConfidence" class="confidence"></div>
+          </article>
+        </div>
+
+        <section class="card">
+          <div class="section-heading">
+            <div>
+              <span class="step">2</span>
+              <h2>Top five qualification drivers</h2>
+            </div>
+          </div>
+          <div id="qualificationList" class="qualification-list"></div>
+        </section>
+
+        <section class="card">
+          <div class="section-heading">
+            <div>
+              <span class="step">3</span>
+              <h2>Fit summary</h2>
+            </div>
+          </div>
+          <div class="summary-grid">
+            <div>
+              <h3>Strong evidence</h3>
+              <ul id="strengthList"></ul>
+            </div>
+            <div>
+              <h3>Important gaps</h3>
+              <ul id="gapList"></ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-heading">
+            <div>
+              <span class="step">4</span>
+              <h2>Aligned resume draft</h2>
+            </div>
+            <span class="truth-badge">No new facts introduced</span>
+          </div>
+          <p class="muted">
+            Version 1 aligns your resume by prioritizing and reordering existing evidence.
+            It does not invent or expand claims.
+          </p>
+          <textarea id="alignedResume" class="resume-output" readonly></textarea>
+          <div class="action-row right">
+            <button id="copyResume" class="button ghost">Copy</button>
+            <button id="downloadResume" class="button primary">Download aligned resume</button>
+          </div>
+        </section>
+
+        <section class="card audit-card">
+          <div class="section-heading">
+            <div>
+              <span class="step">5</span>
+              <h2>Evidence audit</h2>
+            </div>
+          </div>
+          <div id="auditContent"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="settingsDialog">
+    <form method="dialog" class="settings-card">
+      <div class="dialog-header">
+        <div>
+          <div class="eyebrow">Truth guardrail</div>
+          <h2>Master resume</h2>
+        </div>
+        <button value="cancel" class="icon-button" aria-label="Close">×</button>
+      </div>
+
+      <p class="muted">
+        Paste your most complete, truthful resume. Pursuit stores it only in this browser.
+        The MVP will select and reorder existing evidence; it will not create new facts.
+      </p>
+
+      <label for="resumeInput">Master resume text</label>
+      <textarea id="resumeInput" placeholder="Paste your full master resume here..."></textarea>
+
+      <div class="upload-row">
+        <label class="button ghost file-button">
+          Upload .txt
+          <input id="resumeFile" type="file" accept=".txt,text/plain" />
+        </label>
+        <button id="clearResume" type="button" class="button danger-ghost">Clear saved resume</button>
+      </div>
+
+      <div class="dialog-actions">
+        <button value="cancel" class="button ghost">Cancel</button>
+        <button id="saveResume" value="default" class="button primary">Save master resume</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
