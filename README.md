@@ -85,3 +85,4 @@ Do not make changes directly in `main`.
 3. Add browser-based local AI for semantic JD interpretation and controlled rewriting
 4. Add change-by-change evidence tracing
 5. Add application outcome tracking for personal score calibration
+<!-- fresh Pages deployment -->
