@@ -1,88 +1,52 @@
-# Pursuit MVP
+# Pursuit — Development Branch v0.2
 
 **Know your fit. Prove your value. Apply with purpose.**
 
-Pursuit reduces the friction between reading a job description and submitting a strong, truthful application for the right role.
+This development build replaces the original keyword-overlap prototype with the first integrated intelligence architecture.
 
-This first MVP is a static browser application. It costs nothing to host on GitHub Pages and uses no paid API.
+> Keep this version in the `dev` branch. Do not merge to `main` until regression testing is complete.
 
-## What version 1 does
+## What changed
 
-- Stores a master resume locally in the browser
-- Accepts a pasted job description
-- Extracts high-priority qualification requirements
-- Matches requirements to existing resume evidence
-- Produces:
-  - Apply or Pass
-  - Recruiter-screening likelihood range
-  - Hiring-manager-interest range
-  - Top five qualification drivers
-  - Strong evidence and important gaps
-  - An aligned resume draft
-  - Evidence audit
-- Downloads the aligned draft as a text file
+- Local WebLLM reasoning model in the browser; no paid model API.
+- Career-page URL import **or** manual JD paste.
+- Five distinct hiring criteria instead of repeated keyword sentences.
+- Explicit boundary rules for healthcare interoperability, healthcare domain, regulated cross-functional work, matrix leadership, metrics, and AI scope.
+- Master resume -> local Verified Evidence Bank.
+- Gap-driven validation questions.
+- Approved evidence persists and is reused on future JDs.
+- Evidence backup/export/import.
+- ATS Readiness, recruiter alignment, hiring-manager alignment, Apply/Pass, and knockout-risk handling.
+- Conservative resume composition that never moves bullets across employer/role boundaries.
+- DOCX and PDF export.
+- Visible fallback mode if the local reasoning model cannot load.
 
-## Truth guardrail
+## Important model behavior
 
-Version 1 does not invent or expand claims. It aligns by selecting and reordering text already present in the master resume.
+The default reasoning model is `Llama-3.2-3B-Instruct-q4f16_1-MLC`. It downloads on first use and is cached by the browser. A smaller 1B option is available in Settings.
 
-The source code is public when hosted through free GitHub Pages, but the user's master resume and job descriptions are not committed to GitHub. They remain in the browser's local storage.
+## Regression Test #1
 
-## Run locally
+The ndd Medical Technologies JD exposed the original prototype's main failures. See `tests/REGRESSION_01_NDD.md`.
 
-No installation is required.
+## Current production gate
 
-1. Download or clone the repository.
-2. Open `index.html` in a browser.
+This is a development build. Before merge to `main`, we still must verify:
 
-For the most reliable browser behavior, use a local static server:
+- ndd regression behavior in-browser,
+- local-model load and JSON reliability on the target computer,
+- gap-validation persistence across multiple JDs,
+- resume structure on PDF/DOCX input,
+- Word/PDF output quality against the locked two-page submission template,
+- broader strong-fit / adjacent-fit / stretch / pass regression set.
 
-```bash
-python3 -m http.server 8000
-```
+## Privacy
 
-Then open:
+Resume and evidence are stored in browser local storage. The public repository contains application code only.
 
-```text
-http://localhost:8000
-```
-
-## Publish with GitHub Pages
-
-1. Create a public GitHub repository named `pursuit-mvp`.
-2. Upload these files to the repository.
-3. Open **Settings → Pages**.
-4. Under **Build and deployment**, select **Deploy from a branch**.
-5. Select the `main` branch and `/ (root)`.
-6. Save.
-7. GitHub will provide a project URL such as:
+## Branch workflow
 
 ```text
-https://<your-github-username>.github.io/pursuit-mvp/
+dev   -> build, test, review
+main  -> live approved release only
 ```
-
-## Recommended branch workflow
-
-```text
-dev   → build and review
-main  → approved working application
-```
-
-Do not make changes directly in `main`.
-
-## Known MVP limitations
-
-- Text resume input only
-- Downloads a `.txt` resume rather than a formatted `.docx`
-- Uses deterministic evidence matching, not a local language model
-- Scores are fit estimates, not empirically validated hiring probabilities
-- Does not yet support user accounts, cloud sync, payments, or application tracking
-
-## Next build steps
-
-1. Add `.docx` resume upload and formatted `.docx` export
-2. Add a structured evidence bank
-3. Add browser-based local AI for semantic JD interpretation and controlled rewriting
-4. Add change-by-change evidence tracing
-5. Add application outcome tracking for personal score calibration
-<!-- fresh Pages deployment -->

@@ -1,445 +1,62 @@
-const STOP_WORDS = new Set([
-  "the","and","for","with","that","this","from","you","your","our","are","will","have","has","into","their",
-  "they","them","who","what","when","where","how","why","but","not","all","any","can","may","must","should",
-  "would","could","about","across","within","through","using","use","used","more","than","such","including",
-  "required","preferred","responsibilities","responsibility","qualifications","qualification","experience",
-  "years","year","role","position","team","work","working","skills","skill","ability","strong","excellent",
-  "related","other","business","company","organization","candidate","job","employment","opportunity","support"
-]);
-
-const IMPORTANT_MARKERS = [
-  "required","must","minimum","at least","demonstrated","proven","responsible for",
-  "you will","we are looking","preferred","ideally","key responsibilities"
-];
-
-const SENIORITY_WORDS = [
-  "director","associate director","senior manager","manager","lead","principal",
-  "head","vice president","vp","executive","owner","ownership"
-];
-
-const LEADERSHIP_WORDS = [
-  "led","lead","leadership","owned","ownership","managed","influenced",
-  "stakeholder","cross-functional","strategy","roadmap","prioritization","governance"
-];
-
-const OUTCOME_WORDS = [
-  "revenue","saving","savings","growth","adoption","users","hours","cost",
-  "incremental","improved","reduced","increased","impact","value","million","€","$","%"
-];
-
-const settingsDialog = document.getElementById("settingsDialog");
-const openSettings = document.getElementById("openSettings");
-const saveResume = document.getElementById("saveResume");
-const clearResume = document.getElementById("clearResume");
-const resumeInput = document.getElementById("resumeInput");
-const resumeFile = document.getElementById("resumeFile");
-const resumeStatus = document.getElementById("resumeStatus");
-const analyzeBtn = document.getElementById("analyzeBtn");
-const jdInput = document.getElementById("jdInput");
-const results = document.getElementById("results");
-
-const STORAGE_KEY = "pursuit_master_resume_v1";
-
-function getMasterResume() {
-  return localStorage.getItem(STORAGE_KEY) || "";
-}
-
-function setMasterResume(value) {
-  localStorage.setItem(STORAGE_KEY, value.trim());
-  updateResumeStatus();
-}
-
-function updateResumeStatus() {
-  const resume = getMasterResume();
-  if (resume) {
-    resumeStatus.textContent = "Master resume ready";
-    resumeStatus.className = "status success";
-  } else {
-    resumeStatus.textContent = "No master resume saved";
-    resumeStatus.className = "status warning";
-  }
-}
-
-openSettings.addEventListener("click", () => {
-  resumeInput.value = getMasterResume();
-  settingsDialog.showModal();
-});
-
-saveResume.addEventListener("click", (event) => {
-  event.preventDefault();
-  const value = resumeInput.value.trim();
-  if (!value) {
-    alert("Paste your master resume before saving.");
-    return;
-  }
-  setMasterResume(value);
-  settingsDialog.close();
-});
-
-clearResume.addEventListener("click", () => {
-  if (confirm("Remove the saved master resume from this browser?")) {
-    localStorage.removeItem(STORAGE_KEY);
-    resumeInput.value = "";
-    updateResumeStatus();
-  }
-});
-
-resumeFile.addEventListener("change", async () => {
-  const file = resumeFile.files?.[0];
-  if (!file) return;
-  if (!file.name.toLowerCase().endsWith(".txt")) {
-    alert("The first MVP accepts .txt files. You can also paste resume text directly.");
-    return;
-  }
-  resumeInput.value = await file.text();
-});
-
-function normalize(text) {
-  return text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s%$€+#.-]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function tokens(text) {
-  return normalize(text)
-    .split(" ")
-    .map(t => t.replace(/^[.-]+|[.-]+$/g, ""))
-    .filter(t => t.length > 2 && !STOP_WORDS.has(t));
-}
-
-function splitSentences(text) {
-  return text
-    .replace(/\r/g, "")
-    .split(/\n+|(?<=[.!?])\s+(?=[A-Z])/)
-    .map(s => s.trim().replace(/^[-•*]\s*/, ""))
-    .filter(s => s.length >= 25);
-}
-
-function wordFrequency(text) {
-  const map = new Map();
-  for (const t of tokens(text)) map.set(t, (map.get(t) || 0) + 1);
-  return map;
-}
-
-function requirementScore(sentence, freq) {
-  const lower = sentence.toLowerCase();
-  let score = 0;
-  IMPORTANT_MARKERS.forEach(marker => {
-    if (lower.includes(marker)) score += marker === "required" || marker === "must" ? 6 : 3;
-  });
-  const unique = [...new Set(tokens(sentence))];
-  score += unique.reduce((sum, t) => sum + Math.min(freq.get(t) || 0, 4), 0);
-  if (/\b\d+\+?\s+years?\b/i.test(sentence)) score += 5;
-  if (SENIORITY_WORDS.some(w => lower.includes(w))) score += 2;
-  return score;
-}
-
-function extractRequirements(jd) {
-  const freq = wordFrequency(jd);
-  const sentences = splitSentences(jd)
-    .map(text => ({ text, score: requirementScore(text, freq) }))
-    .sort((a, b) => b.score - a.score);
-
-  const selected = [];
-  const seen = new Set();
-
-  for (const item of sentences) {
-    const key = tokens(item.text).slice(0, 6).join("|");
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    selected.push(item);
-    if (selected.length === 12) break;
-  }
-  return selected;
-}
-
-function parseResume(resume) {
-  const lines = resume.replace(/\r/g, "").split("\n");
-  const entries = [];
-  let currentSection = "PROFILE";
-
-  lines.forEach((raw, index) => {
-    const line = raw.trim();
-    if (!line) {
-      entries.push({ type: "blank", text: "", section: currentSection, index });
-      return;
-    }
-
-    const isHeader =
-      line.length < 70 &&
-      (
-        line === line.toUpperCase() ||
-        /^(summary|profile|experience|professional experience|education|skills|certifications|awards|projects)$/i.test(line)
-      ) &&
-      !/[.!?]$/.test(line);
-
-    if (isHeader) {
-      currentSection = line;
-      entries.push({ type: "header", text: line, section: currentSection, index });
-      return;
-    }
-
-    const isBullet = /^[-•*]/.test(line) || line.length > 55;
-    entries.push({
-      type: isBullet ? "bullet" : "line",
-      text: line.replace(/^[-•*]\s*/, ""),
-      section: currentSection,
-      index
-    });
-  });
-
-  return entries;
-}
-
-function overlapScore(a, b) {
-  const aSet = new Set(tokens(a));
-  const bTokens = tokens(b);
-  if (!aSet.size || !bTokens.length) return 0;
-  let match = 0;
-  bTokens.forEach(t => {
-    if (aSet.has(t)) match += t.length > 7 ? 1.5 : 1;
-  });
-  return match / Math.max(4, Math.sqrt(aSet.size * bTokens.length));
-}
-
-function bestEvidence(requirement, resumeEntries) {
-  const candidates = resumeEntries
-    .filter(e => e.type === "bullet" || e.type === "line")
-    .map(e => ({
-      ...e,
-      score: overlapScore(requirement, e.text)
-    }))
-    .sort((a, b) => b.score - a.score);
-
-  return candidates[0] || { text: "No clear evidence found", score: 0 };
-}
-
-function fitLabel(score) {
-  if (score >= 0.42) return { label: "Strong", className: "fit-strong" };
-  if (score >= 0.20) return { label: "Partial", className: "fit-partial" };
-  return { label: "Gap", className: "fit-gap" };
-}
-
-function keywordCoverage(jd, resume) {
-  const freq = wordFrequency(jd);
-  const jdKeywords = [...freq.entries()]
-    .filter(([word, count]) => count >= 2 || word.length > 8)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 35)
-    .map(([word]) => word);
-
-  const resumeSet = new Set(tokens(resume));
-  const matched = jdKeywords.filter(k => resumeSet.has(k));
-  return {
-    ratio: jdKeywords.length ? matched.length / jdKeywords.length : 0,
-    matched,
-    missing: jdKeywords.filter(k => !resumeSet.has(k))
-  };
-}
-
-function mandatoryGapCount(requirements, matches) {
-  let gaps = 0;
-  requirements.slice(0, 8).forEach((req, i) => {
-    const lower = req.text.toLowerCase();
-    const mandatory = /\b(must|required|minimum|at least)\b/.test(lower);
-    if (mandatory && matches[i]?.score < 0.16) gaps += 1;
-  });
-  return gaps;
-}
-
-function scoreBand(value) {
-  const low = Math.max(5, Math.round(value - 6));
-  const high = Math.min(95, Math.round(value + 6));
-  return `${low}–${high}%`;
-}
-
-function confidenceFromData(jd, resume, requirementCount) {
-  if (jd.length > 1200 && resume.length > 1500 && requirementCount >= 8) return "High confidence";
-  if (jd.length > 700 && resume.length > 800) return "Medium confidence";
-  return "Low confidence — add more complete source material";
-}
-
-function buildAlignedResume(entries, jd) {
-  const sections = [];
-  let current = { name: "", items: [] };
-
-  for (const entry of entries) {
-    if (entry.type === "header") {
-      if (current.items.length || current.name) sections.push(current);
-      current = { name: entry.text, items: [] };
-    } else {
-      current.items.push({
-        ...entry,
-        relevance: entry.type === "bullet" ? overlapScore(jd, entry.text) : 0
-      });
-    }
-  }
-  if (current.items.length || current.name) sections.push(current);
-
-  return sections.map(section => {
-    const lines = [];
-    if (section.name) lines.push(section.name);
-
-    const sortable = section.items.filter(i => i.type === "bullet");
-    const fixed = section.items.filter(i => i.type !== "bullet");
-
-    fixed.forEach(i => lines.push(i.text));
-    sortable
-      .sort((a, b) => b.relevance - a.relevance || a.index - b.index)
-      .forEach(i => lines.push(`• ${i.text}`));
-
-    return lines.join("\n");
-  }).join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
-}
-
-function safeText(text) {
-  return text.replace(/[&<>"']/g, ch => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
-  }[ch]));
-}
-
-function summarizeRequirement(text) {
-  const cleaned = text
-    .replace(/^(you will|we are looking for|the successful candidate will|responsibilities include)\s*/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return cleaned.length > 150 ? cleaned.slice(0, 147) + "..." : cleaned;
-}
-
-function analyze() {
-  const jd = jdInput.value.trim();
-  const resume = getMasterResume();
-
-  if (!resume) {
-    settingsDialog.showModal();
-    alert("Save your master resume first.");
-    return;
-  }
-
-  if (jd.length < 300) {
-    alert("Paste a more complete job description before analyzing.");
-    return;
-  }
-
-  analyzeBtn.disabled = true;
-  analyzeBtn.textContent = "Analyzing...";
-
-  setTimeout(() => {
-    const requirements = extractRequirements(jd);
-    const resumeEntries = parseResume(resume);
-    const topFive = requirements.slice(0, 5);
-    const matches = requirements.map(r => bestEvidence(r.text, resumeEntries));
-    const coverage = keywordCoverage(jd, resume);
-    const mandatoryGaps = mandatoryGapCount(requirements, matches);
-
-    const topMatchAvg = matches.slice(0, 5).reduce((s, m) => s + Math.min(m.score, 0.7), 0) / Math.max(1, Math.min(5, matches.length));
-    const seniorityOverlap = SENIORITY_WORDS.filter(w => normalize(jd).includes(w) && normalize(resume).includes(w)).length;
-    const leadershipSignals = LEADERSHIP_WORDS.filter(w => normalize(resume).includes(w)).length;
-    const outcomeSignals = OUTCOME_WORDS.filter(w => normalize(resume).includes(w)).length;
-
-    let recruiter = 35 + coverage.ratio * 40 + topMatchAvg * 28 + Math.min(seniorityOverlap * 3, 9) - mandatoryGaps * 16;
-    let manager = 30 + topMatchAvg * 52 + Math.min(leadershipSignals * 1.4, 12) + Math.min(outcomeSignals * 1.2, 12) - mandatoryGaps * 10;
-
-    recruiter = Math.max(10, Math.min(92, recruiter));
-    manager = Math.max(10, Math.min(92, manager));
-
-    const strongMatches = matches.slice(0, 5).filter(m => m.score >= 0.42).length;
-    const partialMatches = matches.slice(0, 5).filter(m => m.score >= 0.20 && m.score < 0.42).length;
-
-    const apply = mandatoryGaps === 0 && (recruiter >= 52 || strongMatches >= 2 || (strongMatches + partialMatches) >= 4);
-
-    document.getElementById("decisionBadge").textContent = apply ? "APPLY" : "PASS";
-    document.getElementById("decisionBadge").className = `decision-badge ${apply ? "apply" : "pass"}`;
-    document.getElementById("decisionReason").textContent = apply
-      ? "The role has enough evidence-backed alignment to justify a focused application."
-      : mandatoryGaps
-        ? `${mandatoryGaps} likely mandatory requirement${mandatoryGaps > 1 ? "s are" : " is"} not clearly supported by the current resume.`
-        : "The current evidence is too weak across the role's highest-priority qualifications.";
-
-    document.getElementById("recruiterScore").textContent = scoreBand(recruiter);
-    document.getElementById("managerScore").textContent = scoreBand(manager);
-
-    const confidence = confidenceFromData(jd, resume, requirements.length);
-    document.getElementById("recruiterConfidence").textContent = confidence;
-    document.getElementById("managerConfidence").textContent = confidence;
-
-    document.getElementById("qualificationList").innerHTML = topFive.map((req, i) => {
-      const match = matches[i];
-      const fit = fitLabel(match.score);
-      return `
-        <div class="qualification-item">
-          <div class="rank">${i + 1}</div>
-          <div class="qualification-title">${safeText(summarizeRequirement(req.text))}</div>
-          <div class="evidence">${safeText(match.score >= 0.10 ? match.text : "No clear supporting evidence found in the master resume.")}</div>
-          <div class="fit-pill ${fit.className}">${fit.label}</div>
-        </div>`;
-    }).join("");
-
-    const strengths = matches
-      .slice(0, 8)
-      .filter(m => m.score >= 0.32)
-      .slice(0, 5)
-      .map(m => m.text);
-
-    const gaps = requirements
-      .slice(0, 8)
-      .map((r, i) => ({ requirement: r.text, score: matches[i]?.score || 0 }))
-      .filter(x => x.score < 0.20)
-      .slice(0, 5)
-      .map(x => summarizeRequirement(x.requirement));
-
-    document.getElementById("strengthList").innerHTML = strengths.length
-      ? strengths.map(s => `<li>${safeText(s)}</li>`).join("")
-      : "<li>No strong evidence match was found. Review the master resume for missing accomplishments.</li>";
-
-    document.getElementById("gapList").innerHTML = gaps.length
-      ? gaps.map(g => `<li>${safeText(g)}</li>`).join("")
-      : "<li>No major evidence gaps were detected in the five highest-priority requirements.</li>";
-
-    const aligned = buildAlignedResume(resumeEntries, jd);
-    document.getElementById("alignedResume").value = aligned;
-
-    document.getElementById("auditContent").innerHTML = `
-      <div class="audit-row"><div class="audit-key">New facts introduced</div><div class="audit-value">None. The MVP only selects and reorders existing text.</div></div>
-      <div class="audit-row"><div class="audit-key">JD keyword coverage</div><div class="audit-value">${Math.round(coverage.ratio * 100)}% of the role's recurring terms are present in the master resume.</div></div>
-      <div class="audit-row"><div class="audit-key">Likely mandatory gaps</div><div class="audit-value">${mandatoryGaps}</div></div>
-      <div class="audit-row"><div class="audit-key">Scoring caveat</div><div class="audit-value">These are evidence-based fit estimates, not measured hiring probabilities.</div></div>
-      <div class="audit-row"><div class="audit-key">Storage</div><div class="audit-value">The master resume remains in this browser's local storage.</div></div>
-    `;
-
-    results.classList.remove("hidden");
-    results.scrollIntoView({ behavior: "smooth", block: "start" });
-
-    analyzeBtn.disabled = false;
-    analyzeBtn.textContent = "Analyze role";
-  }, 250);
-}
-
-analyzeBtn.addEventListener("click", analyze);
-
-document.getElementById("copyResume").addEventListener("click", async () => {
-  const text = document.getElementById("alignedResume").value;
-  await navigator.clipboard.writeText(text);
-  const button = document.getElementById("copyResume");
-  const original = button.textContent;
-  button.textContent = "Copied";
-  setTimeout(() => button.textContent = original, 1300);
-});
-
-document.getElementById("downloadResume").addEventListener("click", () => {
-  const text = document.getElementById("alignedResume").value;
-  if (!text) return;
-  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = "Pursuit-Aligned-Resume.txt";
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-});
-
-updateResumeStatus();
+const APP={keys:{resume:'pursuit_master_resume_v2',evidence:'pursuit_evidence_bank_v2',settings:'pursuit_settings_v2',last:'pursuit_last_analysis_v2'},engine:null,engineModel:null,activeCriterion:null,pendingClaim:null,lastAnalysis:null};
+const $=id=>document.getElementById(id);const safe=(s='')=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const CATEGORY_LIBRARY={
+ product_strategy:{label:'Product strategy, roadmap & lifecycle ownership',keywords:['product strategy','roadmap','portfolio','backlog','requirements','user stories','product lifecycle','business case','value proposition','product vision','prioritize product'],risk:'core'},
+ healthcare_domain:{label:'Relevant healthcare / medical technology domain depth',keywords:['medical device','digital health','healthcare software','healthcare it','diagnostics','healthcare technology','clinical'],adjacent:['life sciences','life science','biomedical','biotechnology','scientific'],risk:'core'},
+ interoperability:{label:'Healthcare interoperability & digital integration',keywords:['interoperability','ehr','emr','hl7','fhir','healthcare data exchange','healthcare it integration','digital health platform'],adjacent:['api','apis','data integration','integration','data exchange','cloud data platform'],risk:'core'},
+ regulated_crossfunctional:{label:'Regulated cross-functional product development',keywords:['quality','regulatory','clinical affairs','r&d','research and development','quality assurance','regulatory affairs'],adjacent:['engineering','it','compliance','privacy','governance','gdpr','pii'],risk:'core'},
+ customer_market_gtm:{label:'Customer insight, commercialization & go-to-market',keywords:['voice of the customer','customer insights','market research','market needs','go-to-market','product launch','commercialization','sales and marketing','customer engagement','product positioning','customer satisfaction','adoption'],adjacent:['commercial','marketing','sales','market intelligence','customer analytics','adoption','user training'],risk:'core'},
+ agile_delivery:{label:'Agile product delivery & release execution',keywords:['agile','sprint','release planning','launch readiness','acceptance criteria','backlog','user stories','uat','go-live'],risk:'supporting'},
+ recurring_revenue:{label:'Digital services & recurring revenue growth',keywords:['subscription','recurring revenue','digital services','service offering'],risk:'supporting'},
+ education:{label:'Education & credentials',keywords:['bachelor','master','mba','advanced degree','certification','biomedical engineering','computer science','healthcare informatics','life sciences'],risk:'gate'},
+ logistics:{label:'Location, travel & work authorization',keywords:['visa sponsorship','travel','location','united states','work authorization'],risk:'gate'}
+};
+const VALIDATION_QUESTIONS={
+ interoperability:[{id:'interop_type',label:'Have you directly delivered any of these?',multi:true,options:['EHR/EMR integration','HL7/FHIR','Healthcare data exchange','Healthcare IT integration','API integration only','None']},{id:'interop_role',label:'Your role',options:['Accountable owner','Product lead','Contributor','Advisor']}],
+ regulated_crossfunctional:[{id:'regulated_functions',label:'Which functions did you work with directly?',multi:true,options:['Quality','Regulatory','Clinical Affairs','R&D','Engineering only','None']},{id:'regulated_role',label:'Your role in that collaboration',options:['Accountable owner','Product lead','Contributor','Advisor']}],
+ healthcare_domain:[{id:'health_domain',label:'Which environment best describes your direct product experience?',options:['Medical devices','Digital health','Healthcare software / IT','Diagnostics','Life sciences / research tools','None']},{id:'health_years',label:'Approximate direct experience',options:['5+ years','3–5 years','1–3 years','Less than 1 year']}],
+ customer_market_gtm:[{id:'gtm_scope',label:'What have you done directly?',multi:true,options:['Customer interviews / discovery','Market research','Product launch','Go-to-market planning','Commercialization','Adoption / success metrics','None']},{id:'gtm_role',label:'Your role',options:['Accountable owner','Product lead','Contributor','Advisor']}],
+ product_strategy:[{id:'product_scope',label:'What scope did you own?',options:['Portfolio','Product','Program','Feature','Contributor only']},{id:'product_authority',label:'Decision authority',options:['Direct accountability','Shared accountability','Influence only']}]
+};
+function loadJSON(k,f){try{return JSON.parse(localStorage.getItem(k))??f}catch{return f}}function saveJSON(k,v){localStorage.setItem(k,JSON.stringify(v))}function getResume(){return localStorage.getItem(APP.keys.resume)||''}function getEvidence(){return loadJSON(APP.keys.evidence,[])}function setEvidence(v){saveJSON(APP.keys.evidence,v);renderEvidenceBank()}function getSettings(){return{model:'Llama-3.2-3B-Instruct-q4f16_1-MLC',...loadJSON(APP.keys.settings,{})}}function saveSettings(v){saveJSON(APP.keys.settings,v)}
+function normalize(t=''){return t.toLowerCase().replace(/[^\p{L}\p{N}\s%$€+#&/.-]/gu,' ').replace(/\s+/g,' ').trim()}function words(t=''){const stop=new Set(['the','and','for','with','that','this','from','your','our','are','will','have','has','into','their','they','them','who','what','when','where','how','why','but','not','all','any','can','may','must','should','would','could','about','across','within','through','using','use','used','more','than','such','including','role','position','work','working','strong','ability']);return normalize(t).split(' ').filter(w=>w.length>2&&!stop.has(w))}function lexicalSimilarity(a,b){const A=new Set(words(a)),B=words(b);if(!A.size||!B.length)return 0;let n=0;for(const x of B)if(A.has(x))n++;return n/Math.max(4,Math.sqrt(A.size*B.length))}function containsAny(t,a=[]){const n=normalize(t);return a.some(k=>n.includes(normalize(k)))}function countAny(t,a=[]){const n=normalize(t);return a.reduce((s,k)=>s+(n.includes(normalize(k))?1:0),0)}function titleCase(s=''){return s.replace(/\b\w/g,c=>c.toUpperCase())}function uuid(){return crypto.randomUUID?crypto.randomUUID():`ev_${Date.now()}_${Math.random().toString(36).slice(2)}`}
+
+document.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click',e=>{e.preventDefault();const v=el.dataset.nav;document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));$(`view-${v}`).classList.add('active');document.querySelectorAll('.nav-link').forEach(n=>n.classList.toggle('active',n.dataset.nav===v));if(v==='evidence')renderEvidenceBank();if(v==='settings')hydrateSettings();window.scrollTo({top:0,behavior:'smooth'})}));
+document.querySelectorAll('[data-intake]').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.segment').forEach(b=>b.classList.remove('active'));document.querySelectorAll('.intake-panel').forEach(p=>p.classList.remove('active'));btn.classList.add('active');$(`intake-${btn.dataset.intake}`).classList.add('active')}));
+
+function detectSection(line){const n=normalize(line),map=[['professional summary','summary'],['selected impact snapshot','impact_snapshot'],['core capabilities','capabilities'],['professional experience','experience'],['selected impact','impact'],['scientific foundation','early'],['education & certifications','education'],['education','education'],['certifications','certifications']];for(const[k,v]of map)if(n===k||n.startsWith(k+' &'))return v;if(line.length<65&&line===line.toUpperCase()&&/[A-Z]/.test(line))return n.replace(/\s+/g,'_');return null}function isBullet(l){return/^[•\-–*]/.test(l.trim())}function stripBullet(l){return l.trim().replace(/^[•\-–*]\s*/,'')}function isDateLine(l){return/\b(19|20)\d{2}\s*[–-]\s*(present|(19|20)\d{2})\b/i.test(l)}function looksRoleLine(l){return/\b(product|director|manager|owner|specialist|scientist|intern|research|lead|phd)\b/i.test(l)&&l.length<110&&!/[.!?]$/.test(l)}
+function parseResumeStructure(text){const lines=text.replace(/\r/g,'').split('\n');let section='header',context='header';const nodes=[];for(let i=0;i<lines.length;i++){const line=lines[i].trim();if(!line){nodes.push({type:'blank',text:'',section,context,index:i});continue}const sec=detectSection(line);if(sec){section=sec;context=sec;nodes.push({type:'section',text:line,section,context,index:i});continue}if(isBullet(line)){nodes.push({type:'bullet',text:stripBullet(line),section,context,index:i});continue}if(isDateLine(line)||looksRoleLine(line)){context=`ctx_${i}`;nodes.push({type:'heading',text:line,section,context,index:i});continue}nodes.push({type:'line',text:line,section,context,index:i})}return nodes}
+function inferCapability(text){let best={key:'general',score:0};for(const[key,c]of Object.entries(CATEGORY_LIBRARY)){const s=countAny(text,c.keywords)+(c.adjacent?.length?0.5*countAny(text,c.adjacent):0);if(s>best.score)best={key,score:s}}return best.key==='general'?'General career evidence':CATEGORY_LIBRARY[best.key].label}function inferScope(t){const n=normalize(t);if(n.includes('enterprise'))return'Enterprise';if(n.includes('portfolio'))return'Portfolio';if(n.includes('global'))return'Global';if(n.includes('program'))return'Program';if(n.includes('product'))return'Product';return'Unspecified'}function inferAuthority(t){const n=normalize(t);if(/\bown(ed|s)?\b/.test(n))return'Direct accountability';if(/\bled\b|\blead\b/.test(n))return'Leadership';if(/\bsupport(ed|s)?\b|\bcontribut/.test(n))return'Contributor';return'Unspecified'}function prohibitedFor(t){const n=normalize(t),x=[];if(n.includes('cross-functional')||n.includes('matrix'))x.push('Do not convert matrix/cross-functional leadership into direct people management.');if(n.includes('savings')||n.includes('commercial impact')||n.includes('revenue'))x.push('Do not convert value delivered/influenced into budget ownership.');if(n.includes('pilot')||n.includes('explor'))x.push('Do not convert pilot/exploration into production deployment.');return x.join(' ')||'Do not expand responsibility, domain, authority, or attribution beyond the source evidence.'}
+function evidenceFromResume(text){const existing=getEvidence().filter(e=>e.source!=='Master resume'),generated=[];for(const n of parseResumeStructure(text)){if(n.type!=='bullet')continue;generated.push({id:uuid(),capability:inferCapability(n.text),statement:n.text,rolePeriod:n.context,scope:inferScope(n.text),authority:inferAuthority(n.text),source:'Master resume',status:'Verified',allowed:'Use within the wording and scope supported by this statement.',prohibited:prohibitedFor(n.text),createdAt:new Date().toISOString()})}return[...generated,...existing]}
+
+$('resumeFile').addEventListener('change',async()=>{const f=$('resumeFile').files?.[0];if(!f)return;$('resumeParseStatus').textContent=`Reading ${f.name}...`;try{let text='';if(f.name.toLowerCase().endsWith('.txt'))text=await f.text();else if(f.name.toLowerCase().endsWith('.docx')){const ab=await f.arrayBuffer();text=(await window.mammoth.extractRawText({arrayBuffer:ab})).value}else if(f.name.toLowerCase().endsWith('.pdf')){window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';const pdf=await window.pdfjsLib.getDocument({data:await f.arrayBuffer()}).promise,p=[];for(let i=1;i<=pdf.numPages;i++){const page=await pdf.getPage(i),c=await page.getTextContent();p.push(c.items.map(x=>x.str).join(' '))}text=p.join('\n')}else throw new Error('Unsupported file type.');$('resumeInput').value=text;$('resumeParseStatus').textContent=`Loaded ${f.name}. Review then save.`}catch(e){$('resumeParseStatus').textContent=`Could not read file: ${e.message}`}});
+$('saveResume').addEventListener('click',()=>{const text=$('resumeInput').value.trim();if(text.length<300){alert('Add a more complete master resume first.');return}localStorage.setItem(APP.keys.resume,text);setEvidence(evidenceFromResume(text));updateProfileStatus();$('resumeParseStatus').textContent=`Saved locally. ${getEvidence().length} evidence records available.`});
+
+$('importUrlBtn').addEventListener('click',async()=>{const url=$('jobUrl').value.trim();if(!/^https?:\/\//i.test(url)){alert('Paste a complete http/https career-page URL.');return}const b=$('importUrlBtn');b.disabled=true;b.textContent='Importing...';let text='';try{const r=await fetch(url,{mode:'cors'});if(r.ok)text=extractReadableHTML(await r.text())}catch{}if(text.length<500){try{const r=await fetch(`https://r.jina.ai/${url}`);if(r.ok)text=await r.text()}catch{}}b.disabled=false;b.textContent='Import job';if(text.length<500){$('urlImportStatus').textContent='This page could not be imported reliably. Paste the JD instead.';document.querySelector('[data-intake="paste"]').click();return}$('jdInput').value=text;const m=deriveJobMeta(text,url);renderMeta(m,'Career-page import');$('urlImportStatus').textContent='Imported. Review the extracted JD before analysis.';document.querySelector('[data-intake="paste"]').click()});
+function extractReadableHTML(html){const d=new DOMParser().parseFromString(html,'text/html');d.querySelectorAll('script,style,nav,footer,header,aside,svg,form').forEach(n=>n.remove());return(d.body?.innerText||'').replace(/\n{3,}/g,'\n\n').trim()}function deriveJobMeta(text,url=''){const lines=text.split('\n').map(s=>s.trim()).filter(Boolean),role=lines.find(l=>/\b(product manager|director|manager|product owner|lead)\b/i.test(l)&&l.length<120)||'Role detected after analysis',loc=lines.find(l=>/\b(location|united states|remote|hybrid|boston|massachusetts|ma\b)\b/i.test(l)&&l.length<120)||'Not detected';let company='Not detected';try{company=new URL(url).hostname.replace(/^www\./,'').split('.')[0]}catch{}return{company:titleCase(company),role,location:loc}}function renderMeta(m,s){$('importedMeta').classList.remove('hidden');$('metaCompany').textContent=m.company||'—';$('metaRole').textContent=m.role||'—';$('metaLocation').textContent=m.location||'—';$('metaSource').textContent=s}
+
+async function ensureEngine(){const settings=getSettings();if(APP.engine&&APP.engineModel===settings.model)return APP.engine;if(!('gpu'in navigator))throw new Error('WebGPU is unavailable in this browser.');setEngineStatus(`Loading ${settings.model}...`);const webllm=await import('https://esm.run/@mlc-ai/web-llm');APP.engine=await webllm.CreateMLCEngine(settings.model,{initProgressCallback:p=>{const pct=Math.round((p.progress||0)*100);$('modelProgress').style.width=`${pct}%`;setEngineStatus(p.text||`Loading local model ${pct}%`)}});APP.engineModel=settings.model;setEngineStatus(`Local reasoning ready · ${settings.model}`);return APP.engine}function setEngineStatus(t){$('engineStatus').textContent=t;$('settingsEngineStatus').textContent=t}
+$('loadModelBtn').addEventListener('click',async()=>{try{$('loadModelBtn').disabled=true;await ensureEngine()}catch(e){setEngineStatus(`Could not load model: ${e.message}`)}finally{$('loadModelBtn').disabled=false}});$('modelSelect').addEventListener('change',()=>{const s=getSettings();s.model=$('modelSelect').value;saveSettings(s);APP.engine=null;APP.engineModel=null;setEngineStatus('Model selection changed. Load when ready.')});
+async function askJSON(system,user,max_tokens=1400){const engine=await ensureEngine(),r=await engine.chat.completions.create({messages:[{role:'system',content:system},{role:'user',content:user}],temperature:.1,max_tokens,response_format:{type:'json_object'}}),raw=r.choices?.[0]?.message?.content||'{}';try{return JSON.parse(raw)}catch{const m=raw.match(/\{[\s\S]*\}/);if(m)return JSON.parse(m[0]);throw new Error('Local model returned invalid JSON.')}}
+
+function sectionizeJD(jd){const lines=jd.replace(/\r/g,'').split('\n').map(s=>s.trim());let section='general';const out=[];for(const line of lines){if(!line)continue;const n=normalize(line);if(/^(tasks|responsibilities|what you will do)/.test(n))section='tasks';else if(/^(your profile|qualifications|requirements|what you bring)/.test(n))section='profile';else if(/^(about the position|about the role)/.test(n))section='about';else if(/^(why us|about us|contact)/.test(n))section='boilerplate';out.push({line,section})}return out}
+function categoryScores(jd){const items=sectionizeJD(jd),result=[];for(const[key,c]of Object.entries(CATEGORY_LIBRARY)){let score=0,best='',bestScore=-999,mandatory=false;for(const item of items){const hits=countAny(item.line,c.keywords),adj=c.adjacent?countAny(item.line,c.adjacent):0;if(!hits&&!adj)continue;let s=hits*4+adj;if(item.section==='profile')s+=5;if(item.section==='tasks')s+=2;if(item.section==='about')s-=2;if(item.section==='boilerplate')s-=8;if(/\b(required|must|5\+|proven|experience|degree|not available)\b/i.test(item.line)){s+=5;mandatory=true}if(/\b(highly desirable|preferred|advantage)\b/i.test(item.line))s+=2;score+=Math.max(0,s);if(s>bestScore){bestScore=s;best=item.line}}if(score>0)result.push({category:key,label:c.label,requirement:best,importance:score,mandatory,risk:c.risk})}return result.sort((a,b)=>b.importance-a.importance)}function fallbackCriteria(jd){const s=categoryScores(jd),core=s.filter(x=>x.risk==='core').slice(0,5),rest=s.filter(x=>!core.includes(x));return[...core,...rest].slice(0,5)}
+function inferCriterionCategory(text){let best={key:'product_strategy',score:0};for(const[key,c]of Object.entries(CATEGORY_LIBRARY)){const s=countAny(text,c.keywords)+(c.adjacent?countAny(text,c.adjacent)*.5:0);if(s>best.score)best={key,score:s}}return best.key}
+function matchCriterion(c,evidence){const lib=CATEGORY_LIBRARY[c.category]||{keywords:[]},ranked=evidence.map(e=>{let score=lexicalSimilarity(c.requirement||c.label,e.statement)*.45+Math.min(.35,countAny(e.statement,lib.keywords)*.12)+Math.min(.18,(lib.adjacent?countAny(e.statement,lib.adjacent):0)*.06);return{...e,_score:score}}).sort((a,b)=>b._score-a._score),best=ranked[0];let status='Gap',reason='No sufficiently direct evidence was found.';if(best){if(best._score>=.55){status='Strong';reason='Directly relevant verified evidence is available.'}else if(best._score>=.30){status='Partial';reason='Relevant evidence exists but does not fully cover the requirement.'}else if(best._score>=.14){status='Adjacent';reason='Transferable evidence exists, but the requested context or scope is not directly demonstrated.'}}const all=evidence.map(e=>normalize(e.statement)).join(' ');if(c.category==='interoperability'){const exact=containsAny(all,['ehr','emr','hl7','fhir','healthcare data exchange','healthcare it']),api=containsAny(all,['api','apis','data integration']);if(!exact&&api){status='Adjacent';reason='API/data-integration evidence exists, but direct healthcare interoperability or EHR/EMR evidence is not yet verified.'}if(!exact&&!api){status='Gap';reason='No direct healthcare interoperability evidence is currently verified.'}}if(c.category==='regulated_crossfunctional'){const exact=countAny(all,['quality','regulatory','clinical affairs']),rd=countAny(all,['r&d','research and development','engineering']);if(exact>=2)status='Strong';else if(exact===1||rd>0){status='Partial';reason='Cross-functional technical evidence exists, but Quality/Regulatory/Clinical coverage is incomplete.'}else{status='Gap';reason='Regulated product-development functions are not currently demonstrated.'}}if(c.category==='healthcare_domain'){const direct=containsAny(all,['medical device','digital health','healthcare software','healthcare it','diagnostics']),adj=containsAny(all,['life science','life sciences','biomedical','biotechnology']);if(direct)status='Strong';else if(adj){status='Adjacent';reason='Healthcare-adjacent life-science experience is strong, but exact medical-device/digital-health experience is not yet verified.'}}return{status,reason,best:best||null}}
+async function analyzeWithAI(jd,evidence){const condensed=evidence.slice(0,42).map((e,i)=>`E${i+1}: ${e.statement}`).join('\n'),system=`You are Pursuit's hiring-intent reasoning engine. Return JSON only. Select exactly five DISTINCT qualification drivers. Do not select introductory prose or duplicate variants of the same requirement. Weight explicit qualifications heavily and surface domain-specific gates. Never convert adjacent experience into exact experience. Matrix leadership is not direct people management. Value delivered is not budget ownership. API integration is not automatically EHR/EMR/HL7/FHIR interoperability. Life sciences is not automatically medical-device/digital-health experience. JSON: {"hiring_problem":"","criteria":[{"label":"","requirement":"","category":"product_strategy|healthcare_domain|interoperability|regulated_crossfunctional|customer_market_gtm|agile_delivery|recurring_revenue|education|logistics|other","importance":1,"mandatory":true,"why_it_matters":"","evidence_ids":["E1"],"status":"Strong|Partial|Adjacent|Gap","gap_reason":""}],"knockout_risks":[{"requirement":"","status":"clear|uncertain|missing","reason":""}]}`;const out=await askJSON(system,`JOB DESCRIPTION:\n${jd}\n\nVERIFIED EVIDENCE:\n${condensed}`,1800);(out.criteria||[]).forEach(c=>{c.evidence=(c.evidence_ids||[]).map(id=>evidence[parseInt(String(id).replace(/\D/g,''),10)-1]).filter(Boolean)});return out}
+function detectKnockouts(jd,evidence){const out=[],all=evidence.map(e=>normalize(e.statement)).join(' ');if(/visa sponsorship.*not available|no visa sponsorship/i.test(jd))out.push({requirement:'No visa sponsorship available',status:'uncertain',reason:'Work authorization is not stored in the profile.'});if(/bachelor/i.test(jd))out.push({requirement:'Required degree',status:/phd|master|bachelor/i.test(all)?'clear':'uncertain',reason:'Degree requirement detected.'});return out}
+function atsScore(criteria,matches,resume,jd,ko=[]){const v={Strong:1,Partial:.65,Adjacent:.4,Gap:0};let den=0,num=0;matches.forEach((m,i)=>{const w=criteria[i].mandatory?1.25:1;den+=w;num+=(v[m.status]||0)*w});const req=num/Math.max(1,den),terms=[...new Set(words(jd))].filter(w=>w.length>5).slice(0,90),rset=new Set(words(resume)),skill=terms.length?terms.filter(x=>rset.has(x)).length/terms.length:.4,structure=['professional summary','professional experience','education'].filter(x=>normalize(resume).includes(x)).length/3,chron=/\b(19|20)\d{2}\s*[–-]\s*(present|(19|20)\d{2})/i.test(resume)?1:.55,missing=ko.filter(k=>k.status==='missing').length,uncertain=ko.filter(k=>k.status==='uncertain').length,log=Math.max(0,1-missing*.55-uncertain*.2);return Math.max(5,Math.min(98,Math.round(req*40+skill*20+structure*15+chron*10+log*15)))}function alignment(criteria,matches,ko=[]){const v={Strong:1,Partial:.66,Adjacent:.42,Gap:0};let d=0,n=0;matches.forEach((m,i)=>{const w=criteria[i].mandatory?1.35:1;d+=w;n+=(v[m.status]||0)*w});const fit=n/Math.max(1,d),missing=ko.filter(k=>k.status==='missing').length,uncertain=ko.filter(k=>k.status==='uncertain').length,outcomes=getEvidence().filter(e=>/[$€%]|\b\d+[mkb]\+?\b/i.test(e.statement)).length,own=getEvidence().filter(e=>/\bown|lead|strategy|roadmap\b/i.test(e.statement)).length;return{recruiter:Math.max(10,Math.min(92,Math.round(28+fit*64-missing*18-uncertain*5))),manager:Math.max(10,Math.min(92,Math.round(24+fit*58+Math.min(8,outcomes*.5)+Math.min(7,own*.3)-missing*12-uncertain*4)))}}function band(n){return`${Math.max(5,n-6)}–${Math.min(95,n+6)}%`}function statusClass(s){return({Strong:'strong',Partial:'partial',Adjacent:'adjacent',Gap:'gap'}[s]||'partial')}
+function criterionRelevance(text,criteria){return Math.max(0,...criteria.map(c=>lexicalSimilarity(`${c.label} ${c.requirement}`,text)+(countAny(text,CATEGORY_LIBRARY[c.category]?.keywords||[])*.08)))}function composeResumeSafely(resume,criteria){const nodes=parseResumeStructure(resume),out=[];let run=[];const flush=()=>{if(!run.length)return;run.sort((a,b)=>criterionRelevance(b.text,criteria)-criterionRelevance(a.text,criteria)||a.index-b.index);run.forEach(n=>out.push(`• ${n.text}`));run=[]};for(const n of nodes){if(n.type==='bullet'){run.push(n);continue}flush();out.push(n.text)}flush();const additions=getEvidence().filter(e=>e.source==='Gap validation'&&e.status==='Verified');if(additions.length){out.push('','VALIDATED ADDITIONAL EVIDENCE');additions.forEach(e=>out.push(`• ${e.statement} [${e.rolePeriod||'Validated evidence'}]`))}return out.join('\n').replace(/\n{4,}/g,'\n\n\n').trim()}
+
+$('analyzeBtn').addEventListener('click',runAnalysis);async function runAnalysis(){const jd=$('jdInput').value.trim(),resume=getResume(),evidence=getEvidence();if(!resume){alert('Open Settings and save your master resume first.');document.querySelector('[data-nav="settings"]').click();return}if(jd.length<500){alert('Paste or import a more complete job description.');return}$('results').classList.add('hidden');$('analysisLoading').classList.remove('hidden');$('analyzeBtn').disabled=true;let ai=null,aiUsed=false;try{ai=await analyzeWithAI(jd,evidence);aiUsed=true}catch(e){console.warn(e);setEngineStatus(`Local AI unavailable · fallback mode: ${e.message}`)}let criteria;if(aiUsed&&Array.isArray(ai.criteria)&&ai.criteria.length>=5)criteria=ai.criteria.slice(0,5).map((c,i)=>({category:CATEGORY_LIBRARY[c.category]?c.category:inferCriterionCategory(c.requirement||c.label),label:c.label||CATEGORY_LIBRARY[c.category]?.label||`Qualification ${i+1}`,requirement:c.requirement||c.label||'',importance:Number(c.importance)||5-i,mandatory:!!c.mandatory,why_it_matters:c.why_it_matters||'',aiStatus:c.status,aiGap:c.gap_reason,aiEvidence:c.evidence||[]}));else criteria=fallbackCriteria(jd);const matches=criteria.map(c=>{const det=matchCriterion(c,evidence);if(aiUsed&&c.aiStatus){const rank={Gap:0,Adjacent:1,Partial:2,Strong:3},safeStatus=rank[c.aiStatus]<=rank[det.status]?c.aiStatus:det.status;return{...det,status:safeStatus,reason:c.aiGap||det.reason,best:c.aiEvidence?.[0]||det.best}}return det}),ko=ai?.knockout_risks||detectKnockouts(jd,evidence),ats=atsScore(criteria,matches,resume,jd,ko),aligns=alignment(criteria,matches,ko),missing=matches.filter((m,i)=>criteria[i].mandatory&&m.status==='Gap').length,strong=matches.filter(m=>m.status==='Strong').length,decision=(missing===0&&(strong>=2||ats>=62))?'APPLY':'PASS',reason=decision==='APPLY'?'Enough verified evidence exists to justify a focused application. Resolve highlighted gaps before final submission.':missing?`${missing} mandatory qualification${missing>1?'s are':' is'} currently unsupported.`:'The current evidence does not yet justify the tailoring effort.',hiringProblem=ai?.hiring_problem||`The role needs a candidate who can ${criteria.slice(0,3).map(c=>c.label.toLowerCase()).join(', while also ')}.`,composed=composeResumeSafely(resume,criteria);APP.lastAnalysis={jd,criteria,matches,knockouts:ko,ats,aligns,decision,reason,hiringProblem,composed,aiUsed,createdAt:new Date().toISOString()};saveJSON(APP.keys.last,APP.lastAnalysis);renderAnalysis(APP.lastAnalysis);$('analysisLoading').classList.add('hidden');$('results').classList.remove('hidden');$('analyzeBtn').disabled=false;$('results').scrollIntoView({behavior:'smooth',block:'start'})}
+function renderAnalysis(a){$('decisionBadge').textContent=a.decision;$('decisionBadge').className=`decision-badge ${a.decision==='APPLY'?'apply':'pass'}`;$('decisionReason').textContent=a.reason;$('atsScore').textContent=`${a.ats}/100`;$('atsLabel').textContent=a.ats>=80?'Strong':a.ats>=65?'Competitive':a.ats>=50?'Needs improvement':'High risk';$('recruiterScore').textContent=band(a.aligns.recruiter);$('managerScore').textContent=band(a.aligns.manager);const conf=a.aiUsed?'Medium–High confidence':'Limited confidence · fallback analysis';$('recruiterConfidence').textContent=conf;$('managerConfidence').textContent=conf;$('hiringProblem').textContent=a.hiringProblem;$('qualificationList').innerHTML=a.criteria.map((c,i)=>{const m=a.matches[i],ev=m.best?.statement||'No defensible evidence found in the current profile.';return`<div class="qualification"><div class="rank">${i+1}</div><div><div class="q-title">${safe(c.label)}</div><div class="q-meta">${c.mandatory?'Mandatory / high-weight':'Important'} · ${safe(c.requirement)}</div></div><div class="q-evidence"><strong>Evidence:</strong> ${safe(ev)}<br><span>${safe(m.reason)}</span></div><div class="fit ${statusClass(m.status)}">${safe(m.status)}</div></div>`}).join('');const gaps=a.criteria.map((c,i)=>({c,m:a.matches[i],i})).filter(x=>['Gap','Partial','Adjacent'].includes(x.m.status)&&CATEGORY_LIBRARY[x.c.category]?.risk==='core');$('gapSection').classList.toggle('hidden',!gaps.length);$('gapList').innerHTML=gaps.map(x=>`<div class="gap-card"><div><h3>${safe(x.c.label)}</h3><p class="muted">${safe(x.m.reason)}</p></div><button class="button secondary validate-gap-btn" data-gap-index="${x.i}">Validate evidence</button></div>`).join('');document.querySelectorAll('.validate-gap-btn').forEach(b=>b.addEventListener('click',()=>openGapDialog(Number(b.dataset.gapIndex))));$('alignedResume').textContent=a.composed;const unresolved=a.matches.filter(m=>m.status==='Gap').length;$('truthStatus').textContent=unresolved?`${unresolved} unresolved gap${unresolved>1?'s':''}`:'Verified evidence only';$('auditContent').innerHTML=[['Intelligence mode',a.aiUsed?'Local reasoning model + deterministic evidence guardrails':'Deterministic fallback only — do not rely on this result for final submission'],['Knockout risks',a.knockouts.length?a.knockouts.map(k=>`${k.requirement}: ${k.status}`).join(' · '):'No explicit knockout risk detected'],['Evidence reuse',`${getEvidence().filter(e=>e.source==='Gap validation').length} validated gap-resolution record(s) available for future JDs`],['Resume structure','Bullets reorder only within original contiguous bullet groups; employer/role boundaries are not crossed.'],['Scoring caveat','Recruiter and hiring-manager ranges are alignment estimates until calibrated against real outcomes.']].map(([k,v])=>`<div class="audit-row"><div class="audit-key">${safe(k)}</div><div class="audit-value">${safe(v)}</div></div>`).join('')}
+$('showScoreLogic').addEventListener('click',()=>$('scoreDialog').showModal());
+
+function openGapDialog(index){const a=APP.lastAnalysis;if(!a)return;APP.activeCriterion={...a.criteria[index],index,match:a.matches[index]};APP.pendingClaim=null;$('gapDialogTitle').textContent=APP.activeCriterion.label;$('gapDialogContext').textContent=APP.activeCriterion.match.reason;$('gapEvidenceText').value='';$('gapRolePeriod').value='';$('suggestedClaimBox').classList.add('hidden');$('acceptClaim').classList.add('hidden');$('validateGap').classList.remove('hidden');const qs=VALIDATION_QUESTIONS[APP.activeCriterion.category]||[{id:'role',label:'Your role',options:['Accountable owner','Lead','Contributor','Advisor']},{id:'scope',label:'Scope',options:['Enterprise','Portfolio','Product','Program','Feature']}];$('gapQuestions').innerHTML=qs.map(q=>`<div class="question" data-question="${q.id}" data-multi="${q.multi?'true':'false'}"><label>${safe(q.label)}</label><div class="chips">${q.options.map(o=>`<button type="button" class="chip" data-value="${safe(o)}">${safe(o)}</button>`).join('')}</div></div>`).join('');document.querySelectorAll('.chip').forEach(ch=>ch.addEventListener('click',()=>{const q=ch.closest('.question'),multi=q.dataset.multi==='true';if(!multi)q.querySelectorAll('.chip').forEach(x=>x.classList.remove('selected'));ch.classList.toggle('selected')}));$('gapDialog').showModal()}function selectedAnswers(){const out={};document.querySelectorAll('#gapQuestions .question').forEach(q=>out[q.dataset.question]=[...q.querySelectorAll('.chip.selected')].map(x=>x.dataset.value));return out}
+$('validateGap').addEventListener('click',async()=>{const c=APP.activeCriterion;if(!c)return;const text=$('gapEvidenceText').value.trim(),role=$('gapRolePeriod').value.trim(),answers=selectedAnswers(),chosen=Object.values(answers).flat();if(chosen.some(x=>/none|no$/i.test(x))&&!text){$('suggestedClaim').textContent='No new defensible evidence established. Keep this qualification unresolved rather than forcing wording into the resume.';$('suggestedClaimBox').classList.remove('hidden');return}if(text.length<20){alert('Add one short sentence describing what you actually did.');return}$('validateGap').disabled=true;$('validateGap').textContent='Checking...';let suggested=text,assessment='Supported with the scope provided.',prohibited='Do not expand beyond the validated scope.';try{const r=await askJSON(`You are Pursuit's Evidence Gate. Return JSON only. Never invent facts. Never strengthen authority, scope, domain, attribution, or metrics beyond the user's answers. Matrix leadership is not direct people management. Value delivered is not budget ownership. API integration is not automatically EHR/EMR interoperability. Return {"assessment":"Supported|Supported with qualification|Adjacent|Insufficient","suggested_wording":"","prohibited_interpretation":""}.`,`JD requirement: ${c.requirement}\nExisting match: ${c.match?.best?.statement||'None'}\nSelections: ${JSON.stringify(answers)}\nUser evidence: ${text}\nRole/period: ${role||'Not supplied'}`,500);suggested=r.suggested_wording||text;assessment=r.assessment||assessment;prohibited=r.prohibited_interpretation||prohibited}catch{}APP.pendingClaim={suggested,assessment,prohibited,text,role,answers};$('suggestedClaim').textContent=`${suggested} — ${assessment}`;$('suggestedClaimBox').classList.remove('hidden');$('acceptClaim').classList.remove('hidden');$('validateGap').classList.add('hidden');$('validateGap').disabled=false;$('validateGap').textContent='Validate & suggest wording'});
+$('acceptClaim').addEventListener('click',()=>{const c=APP.activeCriterion,p=APP.pendingClaim;if(!c||!p)return;const ev=getEvidence();ev.push({id:uuid(),capability:c.label,statement:p.suggested,rawUserEvidence:p.text,rolePeriod:p.role,scope:'Validated through targeted gap questions',authority:Object.values(p.answers).flat().join('; '),source:'Gap validation',status:'Verified',allowed:'Use this approved wording or a weaker equivalent within validated scope.',prohibited:p.prohibited,createdAt:new Date().toISOString()});setEvidence(ev);$('gapDialog').close();runAnalysis()});
+
+function renderEvidenceBank(){const ev=getEvidence();$('evidenceCount').textContent=ev.length;$('capabilityCount').textContent=new Set(ev.map(e=>e.capability)).size;$('limitedCount').textContent=ev.filter(e=>/do not|limited|adjacent/i.test(e.prohibited||'')).length;$('evidenceTable').innerHTML=ev.length?ev.map(e=>`<div class="evidence-row"><div><div class="evidence-cap">${safe(e.capability)}</div><div class="evidence-source">${safe(e.source)} · ${safe(e.scope||'')}</div></div><div class="evidence-statement">${safe(e.statement)}<br><small>${safe(e.prohibited||'')}</small></div><div><span class="fit strong">${safe(e.status||'Verified')}</span></div></div>`).join(''):'<p class="muted">No evidence records yet. Save a master resume in Settings.</p>'}
+$('exportEvidence').addEventListener('click',()=>downloadBlob(JSON.stringify({version:'2.0',exportedAt:new Date().toISOString(),evidence:getEvidence(),settings:getSettings()},null,2),'Pursuit-Evidence-Backup.json','application/json'));$('importEvidence').addEventListener('change',async()=>{const f=$('importEvidence').files?.[0];if(!f)return;try{const p=JSON.parse(await f.text());if(!Array.isArray(p.evidence))throw new Error('No evidence array found.');setEvidence(p.evidence);alert(`Imported ${p.evidence.length} evidence records.`)}catch(e){alert(`Could not import backup: ${e.message}`)}});
+$('copyResume').addEventListener('click',async()=>{await navigator.clipboard.writeText($('alignedResume').textContent);$('copyResume').textContent='Copied';setTimeout(()=>$('copyResume').textContent='Copy',1200)});$('exportPdf').addEventListener('click',()=>{const{jsPDF}=window.jspdf||{};if(!jsPDF){alert('PDF exporter did not load.');return}const doc=new jsPDF({unit:'pt',format:'letter'}),margin=42,maxWidth=528;let y=48;const lines=doc.splitTextToSize($('alignedResume').textContent,maxWidth);doc.setFont('times','normal');doc.setFontSize(9.5);for(const line of lines){if(y>742){doc.addPage();y=48}doc.text(line,margin,y);y+=12}doc.save('Pursuit-Aligned-Resume.pdf')});$('exportDocx').addEventListener('click',async()=>{try{const{Document,Packer,Paragraph,TextRun}=await import('https://cdn.jsdelivr.net/npm/docx@9.5.1/+esm'),paras=$('alignedResume').textContent.split('\n').map(line=>{const h=/^[A-Z][A-Z &]+$/.test(line.trim())&&line.length<80;return new Paragraph({children:[new TextRun({text:line,bold:h,size:h?22:19})],spacing:{after:h?100:55}})}),doc=new Document({sections:[{properties:{},children:paras}]});downloadBlob(await Packer.toBlob(doc),'Pursuit-Aligned-Resume.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document')}catch(e){alert(`Word export could not load: ${e.message}`)}});function downloadBlob(content,name,type){const blob=content instanceof Blob?content:new Blob([content],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url)}
+function hydrateSettings(){$('resumeInput').value=getResume();$('modelSelect').value=getSettings().model}$('clearAllData').addEventListener('click',()=>{if(!confirm('Clear master resume, evidence bank, settings, and analysis data stored in this browser?'))return;Object.values(APP.keys).forEach(k=>localStorage.removeItem(k));APP.engine=null;APP.lastAnalysis=null;hydrateSettings();renderEvidenceBank();updateProfileStatus();alert('Local Pursuit data cleared.')});function updateProfileStatus(){const ready=getResume().length>300&&getEvidence().length>0;$('profileReadyBadge').textContent=ready?`Master profile ready · ${getEvidence().length} evidence records`:'Master profile not ready';$('profileReadyBadge').className=`status ${ready?'success':'warning'}`}function restoreLast(){const a=loadJSON(APP.keys.last,null);if(a){APP.lastAnalysis=a;$('jdInput').value=a.jd||'';renderAnalysis(a)}}updateProfileStatus();hydrateSettings();renderEvidenceBank();restoreLast();
