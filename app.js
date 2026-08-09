@@ -1,7 +1,7 @@
 const E=window.PursuitEngine;
 const $=id=>document.getElementById(id), $$=(q,r=document)=>[...r.querySelectorAll(q)];
 const KEY="pursuit_release_candidate_1";
-const DEFAULT={version:"S2-GENERALIZED-RC2.2-DEV-FINAL",source:null,profile:null,evidence:[],profileFacts:{workAuth:"",travel:"",productYears:"",gates:{}},ai:{endpoint:"",accessToken:""},opportunities:[],currentOpportunityId:null};
+const DEFAULT={version:"S2-GENERALIZED-RC2.3-ATOMIC-DEV",source:null,profile:null,evidence:[],profileFacts:{workAuth:"",travel:"",productYears:"",gates:{}},ai:{endpoint:"",accessToken:""},opportunities:[],currentOpportunityId:null};
 let S=loadState(),ACTIVE_GAP=null,PENDING=null,OPP_FILTER="active",OPP_SELECTED=new Set(),EDIT_EVIDENCE_ID=null;
 
 function clone(x){return JSON.parse(JSON.stringify(x))}
@@ -31,7 +31,7 @@ function migrateOld(){
         answers:e.answers||{},company:e.company||"",role:e.role||"",period:e.period||"",scope:e.scope||"",
         authority:e.authority||"",metric:!!e.metric,direct:e.direct===true,sourceType:"validation",sourceLabel:"Remembered from earlier Pursuit build",createdAt:e.createdAt||new Date().toISOString()
       })).filter(e=>e.statement);
-      return {version:"S2-GENERALIZED-RC2.2-DEV-FINAL",source:{filename:old.source.filename||"Resume",text:old.source.text,createdAt:old.source.createdAt||new Date().toISOString()},profile,evidence:[...base,...validated],profileFacts:{workAuth:old.profileFacts?.workAuthorization||"",travel:old.profileFacts?.travelReady||""},opportunities:[],currentOpportunityId:null};
+      return {version:"S2-GENERALIZED-RC2.3-ATOMIC-DEV",source:{filename:old.source.filename||"Resume",text:old.source.text,createdAt:old.source.createdAt||new Date().toISOString()},profile,evidence:[...base,...validated],profileFacts:{workAuth:old.profileFacts?.workAuthorization||"",travel:old.profileFacts?.travelReady||""},opportunities:[],currentOpportunityId:null};
     }catch{}
   }
   return clone(DEFAULT);
@@ -44,13 +44,13 @@ function loadState(){
     state.opportunities=(state.opportunities||[]).map(o=>({...o,archived:o.archived===true,archivedAt:o.archivedAt||null,snapshot:o.snapshot||null}));
     state.profileFacts={workAuth:"",travel:"",productYears:"",gates:{},...(state.profileFacts||{})};state.profileFacts.gates={...(state.profileFacts.gates||{})};
     // RC4.4 rebuilds resume-derived evidence from the original source so older misclassified imports cannot survive an upgrade.
-    if(state.source?.text&&(oldVersion!=="S2-GENERALIZED-RC2.2-DEV-FINAL"||(state.evidence||[]).some(e=>e.sourceType==="resume"&&!e.evidenceType))){
+    if(state.source?.text&&(oldVersion!=="S2-GENERALIZED-RC2.3-ATOMIC-DEV"||(state.evidence||[]).some(e=>e.sourceType==="resume"&&!e.evidenceType))){
       const remembered=(state.evidence||[]).filter(e=>e.sourceType==="validation").map(e=>({...e,evidenceType:"validation",usable:e.usable!==false}));
       const profile=E.parseResume(state.source.text);
       state.profile=profile;state.evidence=[...E.evidenceFromProfile(profile,state.source.filename||"Resume"),...remembered];
     }
     state.ai={endpoint:"",accessToken:"",...(state.ai||{})};
-    state.version="S2-GENERALIZED-RC2.2-DEV-FINAL";
+    state.version="S2-GENERALIZED-RC2.3-ATOMIC-DEV";
     return state;
   }catch{return clone(DEFAULT)}
 }
@@ -121,7 +121,7 @@ $("replaceResumeFile").addEventListener("change",async()=>{const f=$("replaceRes
 
 
 
-const ANALYSIS_ENGINE_VERSION="S2-GENERALIZED-RC2.2-DEV-FINAL";
+const ANALYSIS_ENGINE_VERSION="S2-GENERALIZED-RC2.3-ATOMIC-DEV";
 function stableHash(text=""){
   let h=2166136261;for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,16777619)}
   return (h>>>0).toString(36);
@@ -728,7 +728,7 @@ $("saveEvidenceEditBtn").addEventListener("click",()=>{
 $("evidenceSearch").addEventListener("input",renderEvidence);
 $("savePractical").addEventListener("click",()=>{S.profileFacts.workAuth=$("workAuth").value;S.profileFacts.travel=$("travel").value;save();toast("Practical details saved.")});
 $("backupBtn").addEventListener("click",()=>downloadText(JSON.stringify(S,null,2),"pursuit-profile-backup.json","application/json"));
-$("restoreBackup").addEventListener("change",async()=>{const f=$("restoreBackup").files?.[0];if(!f)return;try{const x=JSON.parse(await f.text());if(!x.profile||!Array.isArray(x.evidence))throw new Error("Not a Pursuit profile backup.");S={...clone(DEFAULT),...x,version:"S2-GENERALIZED-RC2.2-DEV-FINAL"};save();renderProfile();toast("Profile restored.")}catch(e){toast(e.message)}});
+$("restoreBackup").addEventListener("change",async()=>{const f=$("restoreBackup").files?.[0];if(!f)return;try{const x=JSON.parse(await f.text());if(!x.profile||!Array.isArray(x.evidence))throw new Error("Not a Pursuit profile backup.");S={...clone(DEFAULT),...x,version:"S2-GENERALIZED-RC2.3-ATOMIC-DEV"};save();renderProfile();toast("Profile restored.")}catch(e){toast(e.message)}});
 
 // ---------- shell ----------
 function renderShell(){

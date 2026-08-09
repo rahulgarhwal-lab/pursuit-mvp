@@ -135,3 +135,25 @@ Presentation/deterministic hardening only. The accepted RC2.2 AI alignment and s
 - Copy-ready resume output contains selected material only.
 - Internal `KEEP / PRIORITIZE` and `DEPRIORITIZE FOR THIS ROLE` instructions are removed.
 - Unplaced validated evidence remains visible for manual placement but is not silently included in one-click full resume copy.
+
+## RC2.3 — Atomic Role Contract Enforcement
+
+This release fixes a generalized role-decomposition failure found during fresh dev testing.
+
+The five hiring drivers remain candidate-independent and frozen. Before candidate evidence alignment:
+1. an AI atomicity auditor rewrites only each driver's proof dimensions;
+2. each dimension must represent one independently provable factual axis;
+3. a deterministic multi-axis detector checks the audited contract;
+4. if obvious compound dimensions remain, a focused repair pass runs once;
+5. if the role contract is still compound, Pursuit fails closed instead of scoring misleading dimensions.
+
+Examples of facts that must stay separate when independently provable:
+- capability/ownership vs domain/customer context
+- platform ownership vs technology/ecosystem experience
+- strategy/roadmap vs outcomes/value
+- stakeholder influence vs people management
+- core capability vs enterprise/global scale
+- AI/product experience vs production deployment
+- delivery/process vs regulatory/compliance context
+
+No ATS weights, dimension aggregation thresholds, recruiter/HM scoring, recommendation logic, evidence truth rules, or resume-output logic changed.
