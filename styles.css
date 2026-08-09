@@ -427,3 +427,24 @@ dialog{border:0;border-radius:22px;width:min(720px,calc(100% - 24px));padding:0;
   .evidence-kind{justify-self:start}
   .evidence-role-group>summary{align-items:flex-start}
 }
+
+/* Sprint 2 RC1 — evidence must be scannable, not a resume dump */
+.evidence-copy>strong{display:block;margin-bottom:7px}
+.evidence-list{display:grid;gap:7px}
+.evidence-item{padding:7px 9px;border:1px solid #e8ebf0;border-radius:9px;background:#fbfcfd}
+.evidence-item p{margin:0;color:#343d4d;font-size:.79rem;line-height:1.38}
+.evidence-item small{display:block;margin-top:4px;color:#7b8494;font-size:.66rem;font-weight:700}
+.evidence-judgment{margin-top:8px;font-size:.76rem;line-height:1.4;color:var(--muted)}
+.evidence-empty{font-size:.78rem;color:var(--muted)}
+
+/* Sprint 2 model intelligence */
+#aiSetupDialog .dialog{max-width:620px}
+#aiSetupDialog input{width:100%}
+
+/* RC2.1 — actionable questions vs established limitations */
+.known-limitations{
+  margin-top:10px;
+  background:rgba(15,23,42,.025);
+  border-color:rgba(15,23,42,.10);
+}
+.known-limitations .decision-change-row em{color:#64748b;}
