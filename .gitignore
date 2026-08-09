@@ -1,12 +1,11 @@
-# OS and editor files
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-
-# Local/private material — never commit
 private/
 resumes/
 applications/
-*.docx
+backups/
 *.pdf
+*.docx
+*.json

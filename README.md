@@ -1,88 +1,38 @@
-# Pursuit MVP
+# Pursuit Release Candidate 4.4
 
-**Know your fit. Prove your value. Apply with purpose.**
+RC4.4 preserves the accepted decision model and opportunity archive from RC3, and hardens the resume-import and evidence-matching pipeline.
 
-Pursuit reduces the friction between reading a job description and submitting a strong, truthful application for the right role.
+## RC4.4 integrity changes
+- Resume evidence is typed as work, capability, summary, education, certification, scientific background, or validated evidence.
+- Education/certification evidence cannot support work-experience capabilities such as Agile, CRM ownership, leadership, or delivery.
+- Two-column PDF credential extraction is reconstructed into separate education and certification records.
+- Suspicious credential rows are repaired where deterministic; otherwise they are quarantined and excluded from matching.
+- Wrapped professional and scientific bullets are reconstructed before evidence matching.
+- Core-capability lines are normalized into atomic capabilities instead of malformed wrapped fragments.
+- Phrase matching uses token/phrase boundaries, so `UAT` no longer matches inside `evaluate`, and `API` no longer matches inside `capabilities`.
+- Generic JDs no longer inherit CRM-specialist categories simply because broad words such as `commercial` appear.
+- A new Product performance & value realization driver handles commercial-performance, KPI, effectiveness, feedback, and performance-data requirements.
+- Work evidence is preferred over capability labels when displaying proof for a hiring driver.
+- Older Pursuit local data automatically rebuilds resume-derived evidence from the original saved resume while preserving remembered validations and opportunity history.
 
-This first MVP is a static browser application. It costs nothing to host on GitHub Pages and uses no paid API.
+## Release rule
+Do not merge to `main` until a quick real-role test confirms that each Top-5 driver has a coherent requirement and relevant evidence.
 
-## What version 1 does
 
-- Stores a master resume locally in the browser
-- Accepts a pasted job description
-- Extracts high-priority qualification requirements
-- Matches requirements to existing resume evidence
-- Produces:
-  - Apply or Pass
-  - Recruiter-screening likelihood range
-  - Hiring-manager-interest range
-  - Top five qualification drivers
-  - Strong evidence and important gaps
-  - An aligned resume draft
-  - Evidence audit
-- Downloads the aligned draft as a text file
+## RC4.4 usability changes
+- Locked RC4.3 intelligence, scoring, import integrity, and opportunity-card design.
+- Reduced new-opportunity vertical space so Analyze role is visible on a normal laptop viewport.
+- Added checkboxes to opportunity cards.
+- Added Select all / Clear selection.
+- Added bulk Archive for Active opportunities and bulk Restore for Archived opportunities.
+- Added permanent bulk Delete with confirmation.
 
-## Truth guardrail
 
-Version 1 does not invent or expand claims. It aligns by selecting and reordering text already present in the master resume.
-
-The source code is public when hosted through free GitHub Pages, but the user's master resume and job descriptions are not committed to GitHub. They remain in the browser's local storage.
-
-## Run locally
-
-No installation is required.
-
-1. Download or clone the repository.
-2. Open `index.html` in a browser.
-
-For the most reliable browser behavior, use a local static server:
-
-```bash
-python3 -m http.server 8000
-```
-
-Then open:
-
-```text
-http://localhost:8000
-```
-
-## Publish with GitHub Pages
-
-1. Create a public GitHub repository named `pursuit-mvp`.
-2. Upload these files to the repository.
-3. Open **Settings → Pages**.
-4. Under **Build and deployment**, select **Deploy from a branch**.
-5. Select the `main` branch and `/ (root)`.
-6. Save.
-7. GitHub will provide a project URL such as:
-
-```text
-https://<your-github-username>.github.io/pursuit-mvp/
-```
-
-## Recommended branch workflow
-
-```text
-dev   → build and review
-main  → approved working application
-```
-
-Do not make changes directly in `main`.
-
-## Known MVP limitations
-
-- Text resume input only
-- Downloads a `.txt` resume rather than a formatted `.docx`
-- Uses deterministic evidence matching, not a local language model
-- Scores are fit estimates, not empirically validated hiring probabilities
-- Does not yet support user accounts, cloud sync, payments, or application tracking
-
-## Next build steps
-
-1. Add `.docx` resume upload and formatted `.docx` export
-2. Add a structured evidence bank
-3. Add browser-based local AI for semantic JD interpretation and controlled rewriting
-4. Add change-by-change evidence tracing
-5. Add application outcome tracking for personal score calibration
-<!-- fresh Pages deployment -->
+## RC4.6 presentation/profile polish
+- Opportunity workflow, intelligence, scoring, import logic, and opportunity library are locked from RC4.4.
+- Analyze action is more visually prominent and remains above the fold on a normal laptop viewport.
+- Main recommendation text is colored green / amber / red to match the decision.
+- My Profile now separates the read-only resume foundation from user-verified additions.
+- Resume foundation explains what the source resume is and shows the extracted work/education/certification structure.
+- Verified additions can be searched, edited, or removed.
+- Brain emoji/icon language was removed from the profile and remembered-evidence cues.
