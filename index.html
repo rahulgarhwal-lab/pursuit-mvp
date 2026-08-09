@@ -1,85 +1,328 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="Pursuit — evidence-governed job fit and resume alignment.">
-  <title>Pursuit — Full Test Build</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Pursuit - know your fit, prove your value, apply with purpose.">
+<title>Pursuit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
 </head>
 <body>
-<div class="app">
-  <header class="topbar">
-    <button class="brand" data-nav="analyze"><span class="brandmark">P</span><span><strong>Pursuit</strong><small>Know your fit. Prove your value. Apply with purpose.</small></span></button>
-    <nav class="nav"><button class="navbtn active" data-nav="analyze">Analyze</button><button class="navbtn" data-nav="evidence">Evidence</button><button class="navbtn" data-nav="profile">Master Profile</button><button class="navbtn" data-nav="quality">Quality</button><button class="navbtn" data-nav="settings">Settings</button></nav>
-    <div class="topstatus"><span id="profilePill" class="pill warning">Profile needed</span><span class="pill success">Local data</span></div>
-  </header>
+<header class="topbar">
+  <button class="brand" id="brandHome">
+    <span class="brandmark">P</span>
+    <span><strong>Pursuit</strong><small>Know your fit. Prove your value. Apply with purpose.</small></span>
+  </button>
+  <nav id="topNav" class="topnav hidden">
+    <button data-view="opportunities" class="navbtn active">Opportunities</button>
+    <button data-view="profile" class="navbtn">My profile</button>
+  </nav>
+</header>
 
-  <main>
-    <section id="view-analyze" class="view active">
-      <section class="hero"><div class="eyebrow">Opportunity decision engine</div><h1>From a job opening to a defensible application.</h1><p>Pursuit identifies what actually determines consideration, finds the strongest verified evidence in your career, asks only when something important is missing, and creates a role-aligned submission without inventing experience.</p></section>
+<main class="shell">
+  <section id="setupView" class="setup-view hidden">
+    <div class="setup-copy">
+      <div class="eyebrow">One-time setup</div>
+      <h1>Start with the resume you trust.</h1>
+      <p>Pursuit uses it as the source of truth, then remembers only the experience you explicitly validate later.</p>
+    </div>
+    <div class="card setup-card">
+      <label class="upload-box">
+        <input id="resumeFile" type="file" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain">
+        <span class="upload-icon">↑</span>
+        <strong>Upload resume</strong>
+        <span>PDF, Word, or TXT</span>
+      </label>
+      <div id="resumeStatus" class="helper"></div>
+      <div class="or"><span></span><b>or</b><span></span></div>
+      <details>
+        <summary>Paste resume text instead</summary>
+        <textarea id="resumePaste" class="resume-paste" placeholder="Paste your complete resume..."></textarea>
+        <button id="savePastedResume" class="primary wide">Use this resume</button>
+      </details>
+    </div>
+  </section>
 
-      <div class="stack">
-        <section id="profileSetupCard" class="card">
-          <div class="sectionhead"><div class="stepwrap"><span class="step">1</span><div><h2>Master profile</h2><p>One truthful source becomes the guardrail for every application.</p></div></div><span id="profileSetupStatus" class="pill warning">Not ready</span></div>
-          <div id="quickProfileSetup"><textarea id="quickResumeText" placeholder="Paste your complete truthful resume here, or upload PDF/DOCX/TXT below."></textarea><div class="toolbar"><label class="button secondary filebtn">Upload resume<input id="quickResumeFile" type="file" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"></label><button id="quickSaveResume" class="button primary">Build master profile</button></div><div id="quickResumeStatus" class="helper">Your resume and evidence stay in this browser. Nothing is committed to GitHub.</div></div>
-          <div id="profileReadySummary" class="hidden notice success"></div>
-        </section>
-
-        <section class="card">
-          <div class="sectionhead"><div class="stepwrap"><span class="step">2</span><div><h2>Add opportunity</h2><p>Use the career page or paste the complete JD. Both paths lead to the same analysis.</p></div></div></div>
-          <div class="segmented"><button class="seg active" data-intake="paste">Paste JD</button><button class="seg" data-intake="url">Career-page link</button></div>
-          <div id="pane-paste" class="intakepane active"><textarea id="jdText" placeholder="Paste the complete job description..."></textarea><div class="toolbar"><button id="reviewJD" class="button primary">Review role</button><button id="loadNddDemo" class="button tertiary">Load ndd regression example</button></div></div>
-          <div id="pane-url" class="intakepane"><div class="inline"><input id="jobUrl" type="url" placeholder="https://company.com/careers/job/..."><button id="importJob" class="button primary">Import</button></div><div id="importStatus" class="helper">Public pages are imported directly when possible; blocked pages fall back to a public text reader. Manual paste always remains available.</div></div>
-          <div id="jobReview" class="hidden" style="margin-top:18px"><div class="notice info">Review the extracted role. Correct anything that is wrong, then confirm before analysis.</div><div class="reviewgrid"><label>Company<input id="jobCompany"></label><label>Role title<input id="jobTitle"></label><label>Location<input id="jobLocation"></label><label>Work model<input id="jobWorkModel"></label><label>Compensation<input id="jobComp"></label><label>Source<input id="jobSource" readonly></label><label class="full"><input id="confirmJD" type="checkbox" style="width:auto;margin-right:7px">I reviewed the JD and want Pursuit to analyze this role.</label></div><div class="toolbar"><button id="analyzeBtn" class="button primary" disabled>Analyze opportunity</button></div></div>
-        </section>
-
-        <section id="analysisLoader" class="card hidden"><div class="loader"><div class="spinner"></div><div><h3 style="margin:0 0 5px">Analyzing the opportunity</h3><div id="loaderText" class="helper">Identifying distinct hiring drivers and evidence...</div></div></div></section>
-
-        <div id="analysisResults" class="stack hidden">
-          <section class="decisiongrid">
-            <article class="card decisioncard"><div class="label">Recommendation</div><div id="recommendation" class="decision">—</div><p id="recommendationReason" class="helper"></p><div id="primaryRisk" class="helper"></div></article>
-            <article class="card scorecard"><div class="label">ATS readiness</div><div id="atsScore" class="score">—</div><div id="atsBand" class="confidence"></div><button id="showScores" class="button tertiary small" style="margin-top:12px">Breakdown</button></article>
-            <article class="card scorecard"><div class="label">Recruiter screening</div><div id="recruiterRange" class="score">—</div><div id="recruiterConfidence" class="confidence"></div></article>
-            <article class="card scorecard"><div class="label">Hiring manager interest</div><div id="managerRange" class="score">—</div><div id="managerConfidence" class="confidence"></div></article>
-          </section>
-
-          <section class="card"><div class="sectionhead"><div class="stepwrap"><span class="step">3</span><div><h2>What this role is really hiring for</h2><p id="hiringProblem"></p></div></div><span id="analysisConfidence" class="pill"></span></div><div id="qualificationList" class="qualifications"></div></section>
-          <section id="knockoutSection" class="card hidden"><div class="sectionhead"><div><h2>Knockout & logistics checks</h2><p>These do not consume a top-five qualification slot, but they can change Apply/Pass.</p></div></div><div id="knockoutList" class="kolist"></div></section>
-          <section id="gapSection" class="card hidden"><div class="sectionhead"><div class="stepwrap"><span class="step">4</span><div><h2>Resolve only important gaps</h2><p>Validate missing experience only if you actually have it. Approved answers become reusable evidence.</p></div></div></div><div id="gapList" class="gaplist"></div></section>
-          <section class="card"><div class="sectionhead"><div class="stepwrap"><span class="step">5</span><div><h2>Submission resume</h2><p>Content is selected and reordered inside the correct employer/role boundaries. Every included bullet remains traceable.</p></div></div><span id="submissionStatus" class="pill"></span></div><div class="resumeactions"><div id="overflowWarning" class="notice warning hidden">Preview overflow detected. Use ATS-safe format or reduce content before submitting.</div><div class="toolbar"><button id="showChanges" class="button tertiary">Change log</button><button id="exportDocx" class="button secondary">Word</button><button id="exportPdf" class="button primary">PDF</button></div></div><div id="resumePreview" class="previewwrap"></div></section>
-          <section class="card"><div class="sectionhead"><div><h2>Evidence & decision audit</h2><p>Why Pursuit made the judgment and what remains uncertain.</p></div></div><div id="auditPanel" class="audit"></div></section>
-        </div>
+  <section id="opportunitiesView" class="view hidden">
+    <section id="opportunityHome">
+      <div class="hero compact">
+        <div class="eyebrow">New opportunity</div>
+        <h1>Is this role worth pursuing?</h1>
+        <p id="profileLine">Your career profile is ready.</p>
       </div>
+
+      <section class="card intake-card">
+        <div class="card-head">
+          <div><span class="step">1</span><div><h2>Add the role</h2><p>Use a career-page link or paste the job description.</p></div></div>
+        </div>
+        <label>Employer career-page link <span class="optional">optional</span></label>
+        <div class="input-row">
+          <input id="jobUrl" type="url" placeholder="https://company.com/careers/job/...">
+          <button id="importJobBtn" class="secondary">Import</button>
+        </div>
+        <div id="importStatus" class="helper"></div>
+        <div class="or"><span></span><b>or paste the job description</b><span></span></div>
+        <textarea id="jdText" class="jd" placeholder="Paste the complete job description here..."></textarea>
+        <div class="action-row">
+          <span class="helper">No settings. No model selection. Pursuit analyzes the role against what you have actually done.</span>
+          <button id="analyzeBtn" class="primary big">Analyze this role →</button>
+        </div>
+      </section>
+
+      <section id="recentSection" class="recent-section hidden">
+        <div class="section-title-row library-title">
+          <div>
+            <h2>Your opportunities</h2>
+            <p>Your analysis library — active work up front, old decisions when you need the receipts.</p>
+          </div>
+          <div class="library-controls">
+            <button id="selectVisibleBtn" class="ghost compact-control">Select all</button>
+            <div class="opp-tabs">
+              <button class="opp-filter active" data-filter="active">Active</button>
+              <button class="opp-filter" data-filter="archived">Archived</button>
+            </div>
+          </div>
+        </div>
+        <div id="bulkBar" class="bulk-bar hidden">
+          <div class="bulk-summary"><strong id="bulkCount">0 selected</strong><button id="clearSelectionBtn" class="textbtn compact-control">Clear</button></div>
+          <div class="bulk-actions">
+            <button id="bulkArchiveBtn" class="secondary compact-control">Archive selected</button>
+            <button id="bulkDeleteBtn" class="danger compact-control">Delete selected</button>
+          </div>
+        </div>
+        <div id="recentList" class="recent-list"></div>
+      </section>
     </section>
 
-    <section id="view-evidence" class="view"><section class="pagehead"><div class="eyebrow">Career memory</div><h1>Verified Evidence Bank</h1><p>Every validated answer is stored once, with its scope and restrictions, and automatically reused when a future role asks for the same thing.</p></section><div class="statgrid"><div class="card stat"><span>Active evidence</span><strong id="evCount">0</strong></div><div class="card stat"><span>Validated additions</span><strong id="validatedCount">0</strong></div><div class="card stat"><span>Capabilities</span><strong id="capCount">0</strong></div><div class="card stat"><span>Retired</span><strong id="retiredCount">0</strong></div></div><section class="card"><div class="sectionhead"><div><h2>Evidence records</h2><p>Search by skill, employer, role, wording, or source.</p></div><div class="toolbar"><input id="evidenceSearch" placeholder="Search evidence..." style="width:230px"><button id="exportBackup" class="button tertiary">Backup</button></div></div><div id="evidenceList" class="evidencegrid"></div></section></section>
+    <section id="analysisView" class="analysis-view hidden">
+      <button id="backToNew" class="textbtn">← New opportunity</button>
 
-    <section id="view-profile" class="view"><section class="pagehead"><div class="eyebrow">Canonical career record</div><h1>Master Profile</h1><p>The original source stays immutable. Validated evidence can be promoted into newer profile versions without rewriting history.</p></section><div class="stack"><section class="card"><div class="sectionhead"><div><h2>Identity & positioning</h2></div><button id="editIdentity" class="button secondary">Edit</button></div><div id="identityView"></div></section><section class="card"><div class="sectionhead"><div><h2>Experience structure</h2><p>Employer/title boundaries used by resume generation.</p></div><button id="viewSource" class="button tertiary">View original source</button></div><div id="rolesView"></div></section><section class="card"><div class="sectionhead"><div><h2>Version history</h2></div></div><div id="versionList" class="versionlist"></div></section></div></section>
+      <section class="card opportunity-header">
+        <div class="opportunity-header-top">
+          <div class="opportunity-identity-block">
+            <div class="eyebrow">Opportunity</div>
+            <h1 class="opportunity-identity">
+              <span id="oppHeaderCompany">Company not identified</span>
+              <span class="identity-divider">|</span>
+              <span id="oppHeaderTitle">Opportunity</span>
+            </h1>
+            <p id="oppContextLine" class="opportunity-context"></p>
+            <p id="oppAnchorLine" class="opportunity-anchors"></p>
+          </div>
+          <div class="opportunity-actions">
+            <span id="oppArchiveBadge" class="archive-badge hidden">📦 Archived snapshot</span>
+            <button id="copyJobSearchBtn" class="ghost">🔎 Copy job search</button>
+            <button id="editMetaBtn" class="ghost">Edit details</button>
+            <button id="viewJdBtn" class="ghost">View JD</button>
+            <a id="sourceLink" class="ghost source-link hidden" href="#" target="_blank" rel="noopener">Career page ↗</a>
+            <button id="archiveOppBtn" class="secondary">Archive</button>
+            <button id="reanalyzeOppBtn" class="primary hidden">Reanalyze with current profile</button>
+          </div>
+        </div>
+        <div class="role-thesis"><span>🎯 What this role really is</span><p id="oppRoleThesis"></p></div>
+        <div id="oppAnalyzedDate" class="analyzed-date"></div>
+      </section>
 
-    <section id="view-quality" class="view"><section class="pagehead"><div class="eyebrow">Acceptance gate</div><h1>Quality Lab</h1><p>Quick checks for truthfulness, repeatability, and the first real regression case.</p></section><div class="testgrid"><section class="card"><div class="sectionhead"><div><h2>Truth guardrails</h2><p>Tests the claims Pursuit must never inflate.</p></div><button id="runTruthTests" class="button primary">Run</button></div><div id="truthResults" class="testresult">Not run.</div></section><section class="card"><div class="sectionhead"><div><h2>ndd regression test</h2><p>Uses the current master profile and the role that exposed the original prototype.</p></div><button id="runNddTest" class="button primary">Run</button></div><div id="nddResults" class="testresult">Not run.</div></section></div></section>
+      <section class="card decision-card">
+        <div class="decision-top">
+          <div>
+            <div class="eyebrow">Should you apply?</div>
+            <h1 id="decisionLabel" class="decision-label">—</h1>
+            <p id="decisionReason" class="decision-reason"></p>
+            <p id="decisionAside" class="decision-aside"></p>
+          </div>
+          <div id="roleMeta" class="role-meta"></div>
+        </div>
+        <div class="score-grid">
+          <div class="score-box"><span>ATS readiness</span><strong id="atsScore">—</strong><small id="atsExplanation"></small></div>
+          <div id="recruiterBox" class="score-box"><span>Recruiter alignment</span><strong id="recruiterScore">—</strong><small id="recruiterExplanation"></small></div>
+          <div id="managerBox" class="score-box"><span>Hiring manager alignment</span><strong id="managerScore">—</strong><small id="managerExplanation"></small></div>
+          <div id="confidenceBox" class="score-box"><span>Evidence confidence</span><strong id="confidenceScore">—</strong><small id="confidenceExplanation"></small></div>
+        </div>
+        <div id="primaryRisk" class="primary-risk"></div>
+        <div id="decisionChange" class="decision-change hidden"><strong>What would move this decision?</strong><div id="decisionChangeList"></div></div>
+      </section>
 
-    <section id="view-settings" class="view"><section class="pagehead"><div class="eyebrow">Control</div><h1>Settings & privacy</h1><p>No paid API or model download is required. The core app runs immediately with its built-in evidence and role engine.</p></section><div class="settingsgrid"><section class="card"><h2>Source resume</h2><textarea id="settingsResumeText" placeholder="Your immutable source resume text"></textarea><div class="toolbar"><label class="button secondary filebtn">Upload replacement source<input id="settingsResumeFile" type="file" accept=".pdf,.docx,.txt"></label><button id="replaceResume" class="button primary">Create new master profile from source</button></div><div id="settingsResumeStatus" class="helper"></div></section><section class="stack"><section class="card"><h2>Application preferences</h2><label>Portfolio / website URL<input id="portfolioUrl" type="url" placeholder="https://..."></label><label>Work authorization note<input id="workAuthorization" placeholder="Example: Authorized to work in the U.S.; no sponsorship required"></label><label><input id="travelReady" type="checkbox" style="width:auto;margin-right:7px">Available to travel when the role requires it</label><label>Resume format<select id="templateMode"><option value="premium">Premium two-page</option><option value="ats">ATS-safe compact</option></select></label><button id="saveSettings" class="button primary">Save settings</button></section><section class="card"><h2>Backup & reset</h2><div class="toolbar"><button id="backupAll" class="button secondary">Export all data</button><label class="button tertiary filebtn">Import backup<input id="importBackup" type="file" accept=".json"></label><button id="resetAll" class="button danger">Reset local data</button></div></section></section></div></section>
-  </main>
-</div>
+      <section class="card">
+        <div class="card-head">
+          <div><span class="step">2</span><div><h2>What they are actually hiring for</h2><p id="hiringProblem"></p></div></div>
+        </div>
+        <div id="topFive" class="topfive"></div>
+      </section>
 
-<dialog id="gapDialog"><div class="modal"><div class="modalhead"><div><div class="eyebrow">Evidence Gate</div><h2 id="gapTitle">Validate gap</h2></div><button class="close" data-close="gapDialog">×</button></div><div id="gapContext" class="notice info"></div><div id="gapQuestions"></div><label>What did you actually do?<textarea id="gapText" placeholder="One concise factual sentence is enough."></textarea></label><div class="formgrid"><label>Employer<input id="gapEmployer"></label><label>Role<input id="gapRole"></label><label>Period<input id="gapPeriod"></label><label>Scope<select id="gapScope"><option>Unspecified</option><option>Feature</option><option>Product</option><option>Program</option><option>Portfolio</option><option>Enterprise</option></select></label><label>Authority<select id="gapAuthority"><option>Unspecified</option><option>Accountable owner</option><option>Product lead</option><option>Contributor</option><option>Advisor</option></select></label><label>Attribution<select id="gapAttribution"><option>As described by user</option><option>Directly attributable</option><option>Shared contribution</option><option>Enabled</option><option>Context only</option></select></label></div><div id="claimBox" class="claimbox hidden"><strong>Defensibility check</strong><p id="claimText"></p></div><div class="modalactions"><button id="leaveGap" class="button tertiary">Leave unresolved</button><button id="checkClaim" class="button secondary">Check claim</button><button id="saveEvidenceBank" class="button primary hidden">Save to Evidence Bank</button><button id="saveEvidenceProfile" class="button primary hidden">Save + Master Profile</button></div></div></dialog>
+      <section id="quickChecksCard" class="card hidden">
+        <div class="card-head">
+          <div><span class="step soft">!</span><div><h2>Quick checks</h2><p>Only things that could materially change the decision.</p></div></div>
+        </div>
+        <div id="quickChecks" class="quick-checks"></div>
+      </section>
 
-<dialog id="evidenceDialog"><div class="modal"><div class="modalhead"><div><div class="eyebrow">Evidence record</div><h2 id="evDialogTitle">Evidence</h2></div><button class="close" data-close="evidenceDialog">×</button></div><div id="evDetail"></div><div class="modalactions"><button id="retireEvidence" class="button tertiary">Retire / reactivate</button><button id="deleteEvidence" class="button danger">Delete</button></div></div></dialog>
-<dialog id="scoreDialog"><div class="modal"><div class="modalhead"><div><div class="eyebrow">Explainability</div><h2>ATS readiness breakdown</h2></div><button class="close" data-close="scoreDialog">×</button></div><div id="scoreBreakdown" class="scorebreak"></div></div></dialog>
-<dialog id="changesDialog"><div class="modal"><div class="modalhead"><div><div class="eyebrow">Resume audit</div><h2>What changed</h2></div><button class="close" data-close="changesDialog">×</button></div><div id="changeLog"></div></div></dialog>
-<dialog id="sourceDialog"><div class="modal"><div class="modalhead"><div><div class="eyebrow">Immutable source</div><h2>Original resume text</h2></div><button class="close" data-close="sourceDialog">×</button></div><pre id="sourceText" class="sourceview"></pre></div></dialog>
-<dialog id="identityDialog"><div class="modal"><div class="modalhead"><div><div class="eyebrow">Profile correction</div><h2>Identity & positioning</h2></div><button class="close" data-close="identityDialog">×</button></div><div class="formgrid"><label>Name<input id="idName"></label><label>Headline<input id="idHeadline"></label><label>Location<input id="idLocation"></label><label>Phone<input id="idPhone"></label><label>Email<input id="idEmail"></label><label>LinkedIn<input id="idLinkedin"></label></div><div class="modalactions"><button id="saveIdentity" class="button primary">Save profile version</button></div></div></dialog>
-<dialog id="bulletDialog"><div class="modal"><div class="modalhead"><div><div class="eyebrow">Governed edit</div><h2>Edit resume bullet</h2></div><button class="close" data-close="bulletDialog">×</button></div><div id="bulletSource" class="notice info"></div><textarea id="bulletText"></textarea><div id="bulletCheck" class="claimbox hidden"><strong>Truth check</strong><p id="bulletCheckText"></p></div><div class="modalactions"><button id="validateBullet" class="button secondary">Validate edit</button><button id="saveBullet" class="button primary hidden">Save verified edit</button></div></div></dialog>
+      <section id="gapCard" class="card hidden">
+        <div class="card-head">
+          <div><span class="step">3</span><div><h2>🔎 A couple things worth checking</h2><p>No 20-question interrogation. Only answers that could actually change the decision.</p></div></div>
+        </div>
+        <div id="gapList" class="gap-list"></div>
+      </section>
 
-<dialog id="requirementDialog"><div class="modal"><div class="modalhead"><div><div class="eyebrow">Correct analysis</div><h2 id="reqTitle">Qualification</h2></div><button class="close" data-close="requirementDialog">×</button></div><label>Requirement classification<select id="reqClass"><option>Mandatory</option><option>Strongly preferred</option><option>Preferred</option><option>Contextual</option></select></label><label>Fit status<select id="reqFit"><option>Strong</option><option>Partial</option><option>Adjacent</option><option>Unsupported</option></select></label><label>Best supporting evidence<select id="reqEvidence"></select></label><div class="modalactions"><button id="saveRequirement" class="button primary">Save & recalculate</button></div></div></dialog>
-<dialog id="roleDialog"><div class="modal"><div class="modalhead"><div><div class="eyebrow">Correct extraction</div><h2>Edit role structure</h2></div><button class="close" data-close="roleDialog">×</button></div><div class="formgrid"><label>Employer<input id="roleCompany"></label><label>Title<input id="roleTitle"></label><label>Dates<input id="roleDates"></label><label>Location<input id="roleLocation"></label></div><div class="notice info">This corrects the structured Master Profile; the original source text remains unchanged and a new version is created.</div><div class="modalactions"><button id="saveRole" class="button primary">Save corrected structure</button></div></div></dialog>
-<div id="toast" class="toast hidden"></div>
-<script src="engine.js"></script><script src="app.js"></script>
-</body></html>
+      <section class="card output-card">
+        <div class="card-head">
+          <div><span class="step">4</span><div><h2>✨ Make the resume earn its keep</h2><p>Only the changes worth making for this role — copy-ready for the resume you already use.</p></div></div>
+          <button id="copyAllBtn" class="primary">Copy full tailored resume text</button>
+        </div>
+        <div id="tailoredOutput" class="tailored-output"></div>
+      </section>
+
+      <section id="notAddedCard" class="card guardrail-card">
+        <div class="card-head">
+          <div><span class="step soft">✓</span><div><h2>🛑 Not touching these claims</h2><p>No resume gymnastics here. Unsupported experience stays out.</p></div></div>
+        </div>
+        <div id="notAddedList"></div>
+      </section>
+    </section>
+  </section>
+
+  <section id="profileView" class="view hidden">
+    <div class="hero compact profile-hero">
+      <div class="eyebrow">Your career profile</div>
+      <h1>What Pursuit knows about you</h1>
+      <p>Your resume is the foundation. Anything you verify during a gap check is kept separately so you can review, edit, or remove it.</p>
+    </div>
+
+    <div class="profile-grid">
+      <section class="card resume-foundation-card">
+        <div class="card-head">
+          <div>
+            <div class="section-kicker">Read-only foundation</div>
+            <h2>Resume foundation</h2>
+            <p id="sourceResumeMeta"></p>
+          </div>
+          <label class="secondary file-label">Replace resume<input id="replaceResumeFile" type="file" accept=".pdf,.docx,.txt"></label>
+        </div>
+        <p class="profile-explainer">This is the resume Pursuit reads when judging a role. Pursuit does not edit this file. Replace it when your real resume changes; saved opportunities and verified additions stay with you.</p>
+        <div id="sourceHealth" class="source-health"></div>
+        <div id="profileStats" class="profile-stats"></div>
+        <details class="profile-structure-details">
+          <summary>Review what Pursuit extracted</summary>
+          <div id="profileStructure" class="profile-structure"></div>
+        </details>
+      </section>
+
+      <section class="card practical-card">
+        <div class="card-head"><div><div class="section-kicker">Only real gates</div><h2>Practical details</h2><p>Used only when a JD actually asks.</p></div></div>
+        <label>U.S. work authorization</label>
+        <select id="workAuth">
+          <option value="">Not specified</option>
+          <option value="authorized">Authorized to work in the U.S.</option>
+          <option value="citizen">U.S. citizen</option>
+          <option value="permanent">Permanent resident / Green Card</option>
+          <option value="sponsorship">Requires sponsorship</option>
+        </select>
+        <label>Travel</label>
+        <select id="travel">
+          <option value="">Not specified</option>
+          <option value="yes">Able to travel as required</option>
+          <option value="no">Not able to travel as required</option>
+        </select>
+        <button id="savePractical" class="secondary">Save details</button>
+      </section>
+    </div>
+
+    <section class="card verified-card">
+      <div class="card-head">
+        <div>
+          <div class="section-kicker">Learned from you</div>
+          <h2>Verified additions</h2>
+          <p>Only facts or honest gaps you confirmed during an application. These are editable. Resume-derived evidence stays attached to the source resume above.</p>
+        </div>
+        <div class="button-row">
+          <button id="backupBtn" class="ghost">Backup profile</button>
+          <label class="ghost file-label">Restore backup<input id="restoreBackup" type="file" accept=".json,application/json"></label>
+        </div>
+      </div>
+      <div class="verified-toolbar">
+        <span id="verifiedCount" class="verified-count"></span>
+        <div class="search-row"><input id="evidenceSearch" placeholder="Search verified additions..."></div>
+      </div>
+      <div id="evidenceList" class="evidence-list verified-list"></div>
+    </section>
+  </section>
+</main>
+
+<dialog id="gapDialog">
+  <div class="dialog">
+    <div class="dialog-head">
+      <div><div class="eyebrow">One thing to clarify</div><h2 id="gapTitle">Validate experience</h2><p id="gapContext"></p></div>
+      <button class="x" data-close="gapDialog">×</button>
+    </div>
+    <div id="gapQuestions" class="gap-questions"></div>
+    <label>Anything useful I should know? <span class="optional">plain English is fine</span></label>
+    <textarea id="gapFreeText" class="small-textarea" placeholder="Example: worked with Quality and Regulatory for release readiness and go/no-go decisions"></textarea>
+    <label>Where / when? <span class="optional">optional but helpful</span></label>
+    <input id="gapRolePeriod" placeholder="Example: MilliporeSigma, 2023-2025">
+    <div id="wordingPreview" class="wording-preview hidden">
+      <span>Strongest defensible wording</span>
+      <p id="wordingText"></p>
+      <small id="wordingScope"></small>
+    </div>
+    <div class="dialog-actions">
+      <button id="leaveGapBtn" class="ghost">Leave unresolved</button>
+      <button id="suggestWordingBtn" class="secondary">Suggest wording</button>
+      <button id="acceptEvidenceBtn" class="primary hidden">Accept & remember</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="evidenceEditDialog">
+  <div class="dialog evidence-edit-dialog">
+    <div class="dialog-head">
+      <div><div class="eyebrow">Verified addition</div><h2 id="editEvidenceTitle">Edit what Pursuit remembers</h2><p>Keep this factual. Future role analysis will use the updated wording.</p></div>
+      <button class="x" data-close="evidenceEditDialog">×</button>
+    </div>
+    <label>What Pursuit should remember</label>
+    <textarea id="editEvidenceStatement" class="small-textarea"></textarea>
+    <div class="edit-context-grid">
+      <div><label>Company <span class="optional">optional</span></label><input id="editEvidenceCompany"></div>
+      <div><label>Role <span class="optional">optional</span></label><input id="editEvidenceRole"></div>
+      <div><label>Period <span class="optional">optional</span></label><input id="editEvidencePeriod" placeholder="2023-2025"></div>
+    </div>
+    <div class="dialog-actions">
+      <button class="ghost" data-close="evidenceEditDialog">Cancel</button>
+      <button id="saveEvidenceEditBtn" class="primary">Save change</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="metaDialog">
+  <div class="dialog meta-dialog">
+    <div class="dialog-head">
+      <div><div class="eyebrow">Opportunity details</div><h2>Keep the analysis easy to recognize later.</h2><p>Pursuit fills what it can from the JD. Fix anything it missed.</p></div>
+      <button class="x" data-close="metaDialog">×</button>
+    </div>
+    <label>Company</label><input id="metaCompany" placeholder="Company name">
+    <label>Job title</label><input id="metaTitle" placeholder="Job title">
+    <label>Location / work arrangement <span class="optional">optional</span></label><input id="metaLocation" placeholder="Cambridge, MA · Hybrid">
+    <div class="dialog-actions"><button id="saveMetaBtn" class="primary">Save details</button></div>
+  </div>
+</dialog>
+
+<dialog id="jdDialog">
+  <div class="dialog jd-dialog">
+    <div class="dialog-head">
+      <div><div class="eyebrow">Original job description</div><h2 id="jdDialogTitle">Opportunity</h2><p>Saved with this analysis so you can always see what Pursuit was judging.</p></div>
+      <button class="x" data-close="jdDialog">×</button>
+    </div>
+    <pre id="jdDialogText" class="jd-dialog-text"></pre>
+  </div>
+</dialog>
+
+<div id="toast" class="toast"></div>
+
+<script src="engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

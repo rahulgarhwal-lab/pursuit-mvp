@@ -1,104 +1,613 @@
-'use strict';
-const E=window.PursuitEngine,$=id=>document.getElementById(id),$$=(s,r=document)=>[...r.querySelectorAll(s)],uniq=a=>[...new Set(a.filter(Boolean))];
-const KEY='pursuit_full_v2_state';
-const DEFAULT={version:'2.0',source:null,profile:null,evidence:[],profileVersions:[],currentJob:null,currentAnalysis:null,opportunities:[],settings:{portfolioUrl:'',workAuthorization:'',travelReady:false,templateMode:'premium'},audit:[]};
-let S=load(),ACTIVE_GAP=null,ACTIVE_EVIDENCE=null,ACTIVE_BULLET=null,ACTIVE_REQ=null,ACTIVE_ROLE=null,PENDING_CLAIM_OK=false;
-function clone(x){return JSON.parse(JSON.stringify(x))}function load(){try{return {...clone(DEFAULT),...JSON.parse(localStorage.getItem(KEY)||'{}')}}catch{return clone(DEFAULT)}}function save(){localStorage.setItem(KEY,JSON.stringify(S));renderStatus()}function uid(p){return E.uid(p)}
-function toast(msg){$('toast').textContent=msg;$('toast').classList.remove('hidden');setTimeout(()=>$('toast').classList.add('hidden'),2600)}function safe(s=''){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':'&quot;',"'":'&#039;'}[c]))}
-function activeEvidence(){return (S.evidence||[]).filter(e=>e.status!=='Retired')}function evById(id){return(S.evidence||[]).find(e=>e.id===id)}
-function audit(type,detail={}){S.audit.unshift({id:uid('audit'),type,detail,at:new Date().toISOString()});S.audit=S.audit.slice(0,250)}
-function navigate(name){$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.navbtn').forEach(b=>b.classList.toggle('active',b.dataset.nav===name));if(name==='evidence')renderEvidence();if(name==='profile')renderProfile();if(name==='settings')hydrateSettings();window.scrollTo({top:0,behavior:'smooth'})}
-$$('[data-nav]').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.nav)));$$('[data-close]').forEach(b=>b.addEventListener('click',()=>$(b.dataset.close).close()));
-$$('[data-intake]').forEach(b=>b.addEventListener('click',()=>{$$('[data-intake]').forEach(x=>x.classList.remove('active'));$$('.intakepane').forEach(x=>x.classList.remove('active'));b.classList.add('active');$(`pane-${b.dataset.intake}`).classList.add('active')}));
+const E=window.PursuitEngine;
+const $=id=>document.getElementById(id), $$=(q,r=document)=>[...r.querySelectorAll(q)];
+const KEY="pursuit_release_candidate_1";
+const DEFAULT={version:"RC4.6",source:null,profile:null,evidence:[],profileFacts:{workAuth:"",travel:""},opportunities:[],currentOpportunityId:null};
+let S=loadState(),ACTIVE_GAP=null,PENDING=null,OPP_FILTER="active",OPP_SELECTED=new Set(),EDIT_EVIDENCE_ID=null;
 
-async function fileText(file,statusEl){statusEl.textContent=`Reading ${file.name}...`;const n=file.name.toLowerCase();if(n.endsWith('.txt'))return await file.text();if(n.endsWith('.docx')){if(!window.mammoth)throw new Error('DOCX parser failed to load.');return (await mammoth.extractRawText({arrayBuffer:await file.arrayBuffer()})).value}if(n.endsWith('.pdf')){if(!window.pdfjsLib)throw new Error('PDF parser failed to load.');pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise,pages=[];for(let p=1;p<=pdf.numPages;p++){const page=await pdf.getPage(p),content=await page.getTextContent(),items=content.items.map(i=>({s:i.str,x:i.transform?.[4]||0,y:i.transform?.[5]||0}));items.sort((a,b)=>Math.abs(b.y-a.y)>2?b.y-a.y:a.x-b.x);let last=null,line=[],lines=[];for(const it of items){if(last!==null&&Math.abs(it.y-last)>3){if(line.length)lines.push(line.join(' '));line=[]}line.push(it.s);last=it.y}if(line.length)lines.push(line.join(' '));pages.push(lines.join('\n'))}return pages.join('\n')}throw new Error('Use PDF, DOCX, or TXT.')}
-async function handleResumeFile(file,target,status){try{const t=await fileText(file,status);target.value=t;status.textContent=`Loaded ${file.name}. Review the text, then build the Master Profile.`;target.dataset.filename=file.name}catch(e){status.textContent=e.message}}
-$('quickResumeFile').addEventListener('change',e=>e.target.files?.[0]&&handleResumeFile(e.target.files[0],$('quickResumeText'),$('quickResumeStatus')));$('settingsResumeFile').addEventListener('change',e=>e.target.files?.[0]&&handleResumeFile(e.target.files[0],$('settingsResumeText'),$('settingsResumeStatus')));
-function pushVersion(reason){if(!S.profile)return;const v={id:uid('ver'),number:(S.profileVersions?.length||0)+1,reason,createdAt:new Date().toISOString(),profile:clone(S.profile),promotedIds:activeEvidence().filter(e=>e.promoted).map(e=>e.id)};S.profileVersions.push(v);S.profile.currentVersionId=v.id}
-function buildProfileFromText(text,filename='Pasted resume'){if(text.trim().length<350){toast('The resume looks incomplete. Use the full truthful source.');return false}S.source={id:S.source?.id||uid('source'),filename,text:text.trim(),createdAt:S.source?.createdAt||new Date().toISOString(),immutable:true};const p=E.parseResume(text,{filename,sourceId:S.source.id});p.identity.portfolio=S.settings.portfolioUrl||'';S.profile=p;S.evidence=E.buildEvidence(p,S.evidence||[]);pushVersion(S.profileVersions.length?'New source resume':'Initial source resume');audit('source_profile_built',{filename,roles:p.roles.length,evidence:S.evidence.length});save();renderAll();return true}
-$('quickSaveResume').addEventListener('click',()=>{if(buildProfileFromText($('quickResumeText').value,$('quickResumeText').dataset.filename||'Pasted resume')){toast('Master Profile ready.');$('jdText').focus()}});$('replaceResume').addEventListener('click',()=>{if(buildProfileFromText($('settingsResumeText').value,$('settingsResumeText').dataset.filename||'Updated source')){toast('New Master Profile version created.');navigate('profile')}});
+function clone(x){return JSON.parse(JSON.stringify(x))}
+function esc(s=""){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
+function ready(){return !!S.profile&&(S.evidence||[]).length>0}
+function save(){localStorage.setItem(KEY,JSON.stringify(S));renderShell()}
+function toast(msg){const t=$("toast");t.textContent=msg;t.classList.add("show");clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove("show"),2600)}
+function downloadText(text,name,type="text/plain"){const blob=new Blob([text],{type}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),800)}
+function currentOpp(){return S.opportunities.find(x=>x.id===S.currentOpportunityId)||null}
+function displayedAnalysis(o=currentOpp()){return o?(o.archived&&o.snapshot?o.snapshot:o.analysis):null}
+function effectiveMeta(o=currentOpp(),a=displayedAnalysis(o)){return {...(a?.meta||{}),...(o?.metaOverride||{})}}
+function fmtDate(value){if(!value)return"";try{return new Date(value).toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"})}catch{return""}}
+function importHealth(){return S.profile?.importHealth||{roles:S.profile?.roles?.length||0,workItems:S.evidence.filter(e=>e.evidenceType==="work").length,education:S.evidence.filter(e=>e.evidenceType==="education").length,certifications:S.evidence.filter(e=>e.evidenceType==="certification").length,warnings:[]}}
+function healthSummary(){const h=importHealth(),w=(h.warnings||[]).length;return w?`Import check: ${w} suspicious line${w===1?"":"s"} quarantined · ${h.workItems||0} work evidence items`:`Import looks healthy ✓ · ${h.workItems||0} work evidence items · ${h.education||0} degree${h.education===1?"":"s"} · ${h.certifications||0} certification${h.certifications===1?"":"s"}`}
 
-$('reviewJD').addEventListener('click',()=>prepareReview($('jdText').value.trim(),'manual'));$('importJob').addEventListener('click',async()=>{const url=$('jobUrl').value.trim();if(!/^https?:\/\//i.test(url)){toast('Paste a complete career-page URL.');return}const b=$('importJob');b.disabled=true;b.textContent='Importing…';$('importStatus').textContent='Trying the employer page…';let text='';try{const r=await fetch(url,{mode:'cors'});if(r.ok)text=cleanHTML(await r.text())}catch{}if(text.length<450){try{$('importStatus').textContent='Direct import blocked. Trying reader fallback…';const r=await fetch(`https://r.jina.ai/${url}`);if(r.ok)text=await r.text()}catch{}}b.disabled=false;b.textContent='Import';if(text.length<450){$('importStatus').textContent='This page could not be imported reliably. Paste the JD instead; the URL stays here.';$$('[data-intake]').find(x=>x.dataset.intake==='paste')?.click();return}$('jdText').value=text;prepareReview(text,url);$('importStatus').textContent='Imported. Review the extracted role and JD before analysis.';$$('[data-intake]').find(x=>x.dataset.intake==='paste')?.click()});
-function cleanHTML(html){const d=new DOMParser().parseFromString(html,'text/html');d.querySelectorAll('script,style,nav,footer,header,aside,form,svg').forEach(n=>n.remove());return(d.body?.innerText||'').replace(/\n{3,}/g,'\n\n').trim()}
-function prepareReview(text,source){if(text.length<450){toast('Paste the complete JD for a reliable analysis.');return}const m=E.extractJobMeta(text,source);$('jobCompany').value=m.company;$('jobTitle').value=m.title;$('jobLocation').value=m.location;$('jobWorkModel').value=m.workModel;$('jobComp').value=m.compensation;$('jobSource').value=source==='manual'?'Manual paste':source;$('jobReview').classList.remove('hidden');$('confirmJD').checked=false;$('analyzeBtn').disabled=true;S._pendingJobSource=source;$('jobReview').scrollIntoView({behavior:'smooth',block:'nearest'})}
-$('confirmJD').addEventListener('change',()=>{$('analyzeBtn').disabled=!($('confirmJD').checked&&S.profile)});
-function currentJob(){return{id:uid('opp'),sourceType:S._pendingJobSource&&S._pendingJobSource!=='manual'?'url':'manual',sourceUrl:S._pendingJobSource==='manual'?'':S._pendingJobSource||'',jd:$('jdText').value.trim(),metadata:{company:$('jobCompany').value.trim(),title:$('jobTitle').value.trim(),location:$('jobLocation').value.trim(),workModel:$('jobWorkModel').value.trim(),compensation:$('jobComp').value.trim()},createdAt:new Date().toISOString()}}
-$('analyzeBtn').addEventListener('click',()=>{if(!S.profile){navigate('analyze');toast('Build the Master Profile first.');return}if(!$('confirmJD').checked){toast('Review and confirm the JD first.');return}const job=currentJob();$('analysisResults').classList.add('hidden');$('analysisLoader').classList.remove('hidden');$('loaderText').textContent='Identifying distinct hiring drivers, knockout risks, and the strongest verified evidence…';setTimeout(()=>{try{const a=E.analyze({jd:job.jd,profile:S.profile,evidence:activeEvidence(),jobMeta:job.metadata,profileFacts:S.settings});a.id=uid('analysis');a.job=job;S.currentJob=job;S.currentAnalysis=a;S.opportunities=[...S.opportunities.filter(x=>x.id!==job.id),{...job,analysis:a}].slice(-30);audit('analysis_completed',{job:job.metadata,decision:a.recommendation.label,ats:a.scores.ats});save();renderAnalysis();$('analysisLoader').classList.add('hidden');$('analysisResults').classList.remove('hidden');$('analysisResults').scrollIntoView({behavior:'smooth',block:'start'})}catch(e){console.error(e);$('analysisLoader').classList.add('hidden');toast(`Analysis failed: ${e.message}`)}},60)});
-
-function renderAnalysis(){const a=S.currentAnalysis;if(!a)return;const r=a.recommendation;$('recommendation').textContent=r.label;$('recommendation').className=`decision ${r.tone==='pass'?'pass':r.tone==='apply'?'':'stretch'}`;$('recommendationReason').textContent=r.reason;$('primaryRisk').textContent=`Primary risk: ${r.risk}`;$('atsScore').textContent=`${a.scores.ats}/100`;$('atsBand').textContent=a.scores.ats>=80?'Strong readiness':a.scores.ats>=65?'Competitive readiness':a.scores.ats>=50?'Needs improvement':'High risk';$('recruiterRange').textContent=`${a.scores.recruiter.low}–${a.scores.recruiter.high}%`;$('managerRange').textContent=`${a.scores.manager.low}–${a.scores.manager.high}%`;$('recruiterConfidence').textContent=`${a.scores.confidence} confidence · uncalibrated alignment estimate`;$('managerConfidence').textContent=`${a.scores.confidence} confidence · uncalibrated alignment estimate`;$('analysisConfidence').textContent=`${a.scores.confidence} confidence`;$('analysisConfidence').className=`pill ${a.scores.confidence==='Low'?'warning':'success'}`;$('hiringProblem').textContent=a.hiringProblem;
-  $('qualificationList').innerHTML=a.criteria.map((c,i)=>{const m=a.matches[i],e=evById(m.bestEvidenceId);return`<div class="qualification"><div class="rank">${i+1}</div><div><div class="qtitle">${safe(c.label)}</div><div class="qsub">${safe(c.classification)} · ${safe(c.requirement)}</div><div class="qsub">Why it matters: ${safe(c.why)}</div></div><div class="qev"><strong>Best evidence</strong><br>${e?safe(e.approvedLanguage||e.statement):'No defensible evidence found.'}<br><span>${safe(m.reason)}</span>${e?`<br><button class="button tertiary small open-evidence" data-id="${e.id}">Evidence & provenance</button>`:''}</div><div><span class="fit ${m.status}">${safe(m.status)}</span><div class="qsub">${safe(m.gapType)}</div><button class="button tertiary small correct-req" data-index="${i}" style="margin-top:7px">Correct</button></div></div>`}).join('');$$('.open-evidence').forEach(b=>b.addEventListener('click',()=>openEvidence(b.dataset.id)));$$('.correct-req').forEach(b=>b.addEventListener('click',()=>openRequirement(+b.dataset.index)));
-  $('knockoutSection').classList.toggle('hidden',!a.knockouts.length);$('knockoutList').innerHTML=a.knockouts.map(k=>`<div class="koitem"><div><h3>${safe(k.requirement)}</h3><p>${safe(k.reason)}</p></div><span class="pill ${k.status==='Clear'?'success':k.status==='Missing'?'danger':'warning'}">${safe(k.status)}</span></div>`).join('');
-  const gaps=a.criteria.map((c,i)=>({c,m:a.matches[i],i})).filter(x=>x.m.status!=='Strong');$('gapSection').classList.toggle('hidden',!gaps.length);$('gapList').innerHTML=gaps.map(x=>`<div class="gapitem"><div><div class="gaptype">${safe(x.m.gapType)}</div><h3>${safe(x.c.label)}</h3><p>${safe(x.m.reason)}</p></div><button class="button secondary validate-gap" data-index="${x.i}">Validate evidence</button></div>`).join('');$$('.validate-gap').forEach(b=>b.addEventListener('click',()=>openGap(+b.dataset.index)));
-  renderResume();renderAudit();renderSubmission();}
-$('showScores').addEventListener('click',()=>{const b=S.currentAnalysis?.scores?.breakdown||{};$('scoreBreakdown').innerHTML=Object.entries(b).map(([k,v])=>`<div class="scorepart"><span>${safe(k.replace(/([A-Z])/g,' $1'))}</span><strong>${v}</strong></div>`).join('');$('scoreDialog').showModal()});
-
-function openGap(i){const a=S.currentAnalysis;if(!a)return;ACTIVE_GAP={criterion:a.criteria[i],match:a.matches[i],index:i};PENDING_CLAIM_OK=false;$('gapTitle').textContent=ACTIVE_GAP.criterion.label;$('gapContext').textContent=`Current assessment: ${ACTIVE_GAP.match.status}. ${ACTIVE_GAP.match.reason}`;$('gapText').value='';const best=evById(ACTIVE_GAP.match.bestEvidenceId);$('gapEmployer').value=best?.employer||S.profile?.roles?.[0]?.company||'';$('gapRole').value=best?.role||S.profile?.roles?.[0]?.title||'';$('gapPeriod').value=best?.period||S.profile?.roles?.[0]?.dates||'';$('gapScope').value=best?.scope||'Unspecified';$('gapAuthority').value='Unspecified';$('gapAttribution').value='As described by user';$('claimBox').classList.add('hidden');$('saveEvidenceBank').classList.add('hidden');$('saveEvidenceProfile').classList.add('hidden');renderGapQuestions(ACTIVE_GAP.criterion.category);$('gapDialog').showModal()}
-function renderGapQuestions(cat){const maps={interoperability:['EHR/EMR integration','HL7/FHIR','Healthcare data exchange','Healthcare IT integration','API/data integration only','None'],regulated:['Quality','Regulatory','Clinical Affairs','R&D','Engineering','None'],healthcare_domain:['Medical devices','Digital health','Healthcare software/IT','Diagnostics','Life sciences/research tools','None'],customer_commercial:['Customer discovery','Market research','Go-to-market planning','Product launch','Commercialization','Adoption metrics','None'],people_management:['Direct reports','Hiring decisions','Performance management','Matrix leadership only','None'],budget:['Budget ownership','P&L ownership','Business case only','Value/revenue impact only','None']};const opts=maps[cat]||['Accountable owner','Product lead','Contributor','Advisor','None'];$('gapQuestions').innerHTML=`<label>Quick evidence check</label><div class="chips">${opts.map(o=>`<button type="button" class="chip" data-value="${safe(o)}">${safe(o)}</button>`).join('')}</div>`;$$('#gapQuestions .chip').forEach(c=>c.addEventListener('click',()=>c.classList.toggle('selected')))}
-$('checkClaim').addEventListener('click',()=>{if(!ACTIVE_GAP)return;const text=$('gapText').value.trim(),chips=$$('#gapQuestions .chip.selected').map(x=>x.dataset.value);if(text.length<20){toast('Add one concise factual sentence describing what you actually did.');return}const source=[text,...chips,evById(ACTIVE_GAP.match.bestEvidenceId)?.statement||''];const truth=E.truthCheck(text,source);PENDING_CLAIM_OK=truth.ok;$('claimText').textContent=truth.ok?`Supported as written within the scope you supplied. Pursuit will store this evidence without expanding authority, domain, attribution, or metrics.`:`Needs correction: ${truth.issues.map(x=>x.message).join(' ')}`;$('claimBox').classList.remove('hidden');$('saveEvidenceBank').classList.toggle('hidden',!truth.ok);$('saveEvidenceProfile').classList.toggle('hidden',!truth.ok)});
-function saveGap(destination){if(!PENDING_CLAIM_OK||!ACTIVE_GAP)return;const e=E.makeValidatedEvidence({criterion:ACTIVE_GAP.criterion,text:$('gapText').value.trim(),employer:$('gapEmployer').value.trim(),role:$('gapRole').value.trim(),period:$('gapPeriod').value.trim(),scope:$('gapScope').value,authority:$('gapAuthority').value,attribution:$('gapAttribution').value,destination});S.evidence.push(e);if(destination==='profile'){S.profile.promotedEvidenceIds=uniq([...(S.profile.promotedEvidenceIds||[]),e.id]);pushVersion(`Promoted evidence: ${e.capability}`)}audit('evidence_validated',{capability:e.capability,destination});$('gapDialog').close();save();toast('Evidence saved and reused in the role assessment.');reanalyzeCurrent()}
-$('saveEvidenceBank').addEventListener('click',()=>saveGap('bank'));$('saveEvidenceProfile').addEventListener('click',()=>saveGap('profile'));$('leaveGap').addEventListener('click',()=>{$('gapDialog').close()});
-function reanalyzeCurrent(){const j=S.currentJob;if(!j)return;const a=E.analyze({jd:j.jd,profile:S.profile,evidence:activeEvidence(),jobMeta:j.metadata,profileFacts:S.settings});a.id=uid('analysis');a.job=j;S.currentAnalysis=a;save();renderAnalysis();renderEvidence();renderProfile()}
-
-function renderResume(){const d=S.currentAnalysis?.draft;if(!d)return;$('resumePreview').innerHTML=`${resumePage(d,1)}${resumePage(d,2)}`;setTimeout(()=>{renderQR();checkOverflow()},30);$$('.bullet-edit').forEach(b=>b.addEventListener('click',()=>openBullet(b.dataset.id)))}
-function roleParts(d){const r=d.roles||[];return{p1:r.slice(0,1),p2:r.slice(1)}}
-function resumePage(d,n){const id=d.identity||{},parts=roleParts(d),roles=n===1?parts.p1:parts.p2;return`<section class="resume-page" data-page="${n}"><div class="r-head"><div><div class="r-name">${safe(id.name||'Candidate')}</div><div class="r-title">${safe(id.headline||'Professional positioning')}</div><div class="r-contact">${safe([id.location,id.phone,id.email,id.linkedin].filter(Boolean).join(' | '))}</div>${S.settings.portfolioUrl?`<div class="r-contact">${safe(S.settings.portfolioUrl)}</div>`:''}</div><div class="r-qr" id="qr${n}"></div></div>${n===1?`<div class="r-section"><div class="r-section-title">PROFESSIONAL SUMMARY</div><div class="r-summary">${safe(d.summary)}</div></div><div class="r-section"><div class="r-section-title">SELECTED IMPACT SNAPSHOT</div><div class="r-impact-grid">${d.impact.map(i=>`<div class="r-impact"><strong>${safe(i.metric||'Impact')}</strong><span>${safe(i.text.replace(i.metric||'','').slice(0,90))}</span></div>`).join('')}</div></div><div class="r-section"><div class="r-section-title">CORE CAPABILITIES</div><div class="r-cap-grid">${d.capabilities.map(c=>`<div>• ${safe(c)}</div>`).join('')}</div></div><div class="r-section"><div class="r-section-title">PROFESSIONAL EXPERIENCE</div>${rolesHTML(roles)}</div>`:`${roles.length?`<div class="r-section"><div class="r-section-title">PROFESSIONAL EXPERIENCE — CONTINUED</div>${rolesHTML(roles)}</div>`:''}<div class="r-section"><div class="r-section-title">SELECTED IMPACT</div><ul>${d.selectedImpact.map(b=>bulletHTML(b)).join('')}</ul></div><div class="r-section"><div class="r-section-title">SCIENTIFIC FOUNDATION & EARLY CAREER</div><div class="r-small">${(d.early||[]).slice(0,6).map(x=>`• ${safe(x)}`).join('<br>')}</div></div><div class="r-section"><div class="r-section-title">EDUCATION & CERTIFICATIONS</div><div class="r-columns"><div class="r-small">${d.education.slice(0,Math.ceil(d.education.length/2)).map(x=>`• ${safe(x)}`).join('<br>')}</div><div class="r-small">${d.education.slice(Math.ceil(d.education.length/2)).map(x=>`• ${safe(x)}`).join('<br>')}</div></div></div>`}<div class="r-footer">Pursuit · verified role-aligned evidence · ${n}/2</div></section>`}
-function rolesHTML(roles){return roles.map(r=>`<div class="r-role"><div class="r-role-head"><div>${safe(r.company)}${r.title?` · ${safe(r.title)}`:''}</div><span>${safe(r.dates||'')}</span></div><ul>${r.bullets.map(b=>bulletHTML(b)).join('')}</ul></div>`).join('')}function bulletHTML(b){return`<li>${safe(b.text)} <span class="trace-dot" title="Verified evidence"></span><button class="bullet-edit" data-id="${b.id}">edit</button></li>`}
-function renderQR(){if(!S.settings.portfolioUrl||!window.QRCode)return;for(const n of [1,2]){const el=$(`qr${n}`);if(el){el.innerHTML='';new QRCode(el,{text:S.settings.portfolioUrl,width:56,height:56,correctLevel:QRCode.CorrectLevel.M})}}}function checkOverflow(){const over=$$('.resume-page').some(p=>p.scrollHeight>p.clientHeight+8);$('overflowWarning').classList.toggle('hidden',!over);return over}
-function allDraftBullets(){const d=S.currentAnalysis?.draft;if(!d)return[];return[...d.roles.flatMap(r=>r.bullets),...d.selectedImpact]}function findBullet(id){return allDraftBullets().find(b=>b.id===id)}function openBullet(id){const b=findBullet(id),e=evById(b?.evidenceId);if(!b)return;ACTIVE_BULLET=b;$('bulletSource').innerHTML=`<strong>Supporting evidence</strong><br>${safe(e?.statement||b.originalText||'')}<br><small>${safe((e?.restrictions||[]).join(' '))}</small>`;$('bulletText').value=b.text;$('bulletCheck').classList.add('hidden');$('saveBullet').classList.add('hidden');$('bulletDialog').showModal()}
-$('validateBullet').addEventListener('click',()=>{if(!ACTIVE_BULLET)return;const e=evById(ACTIVE_BULLET.evidenceId),text=$('bulletText').value.trim(),check=E.truthCheck(text,[e?.statement||ACTIVE_BULLET.originalText||'']);$('bulletCheckText').textContent=check.ok?'Edit remains within the supporting evidence and does not trigger a known scope/metric inflation rule.':check.issues.map(x=>x.message).join(' ');$('bulletCheck').classList.remove('hidden');$('saveBullet').classList.toggle('hidden',!check.ok)});$('saveBullet').addEventListener('click',()=>{ACTIVE_BULLET.text=$('bulletText').value.trim();ACTIVE_BULLET.reason='User-edited and passed Pursuit truth guardrails.';audit('resume_bullet_edited',{evidenceId:ACTIVE_BULLET.evidenceId});$('bulletDialog').close();save();renderResume();renderSubmission();toast('Verified edit saved.')});
-function renderSubmission(){const a=S.currentAnalysis;if(!a)return;const issues=[];if(a.knockouts.some(k=>k.status==='Missing'))issues.push('missing knockout requirement');if(a.matches.some((m,i)=>a.criteria[i].classification==='Mandatory'&&m.status==='Unsupported'))issues.push('unsupported mandatory qualification');const status=issues.length?'Review Required':'Submission Ready';$('submissionStatus').textContent=status;$('submissionStatus').className=`pill ${issues.length?'warning':'success'}`;$('submissionStatus').title=issues.length?issues.join(', '):'All included bullets are traceable to verified evidence.'}
-function renderAudit(){const a=S.currentAnalysis;if(!a)return;const rows=[['Role interpretation','Five distinct qualification drivers; logistics and education are handled separately as knockout checks.'],['ATS readiness',`Requirements ${a.scores.breakdown.requirements}/40 · terminology ${a.scores.breakdown.terminology}/18 · title/seniority ${a.scores.breakdown.titleSeniority}/12 · parseability ${a.scores.breakdown.parseability}/10 · chronology ${a.scores.breakdown.chronology}/8 · education/logistics ${a.scores.breakdown.educationLogistics}/12.`],['Evidence memory',`${activeEvidence().filter(e=>e.sourceType==='validation').length} validated addition(s) are reusable.`],['Truth guardrail','Matrix leadership ≠ direct reports; value/revenue ≠ budget ownership; API integration ≠ healthcare interoperability; adjacent domain ≠ exact domain.'],['Scoring caveat','Recruiter and hiring-manager ranges are alignment estimates, not measured hiring probabilities.'],['Source',a.job.sourceType==='url'?`Career page preserved: ${a.job.sourceUrl}`:'Manual JD preserved locally.']];$('auditPanel').innerHTML=rows.map(([k,v])=>`<div class="auditrow"><div class="auditkey">${safe(k)}</div><div class="auditvalue">${safe(v)}</div></div>`).join('')}
-$('showChanges').addEventListener('click',()=>{const d=S.currentAnalysis?.draft;if(!d)return;const rows=[];d.roles.forEach(r=>r.bullets.forEach(b=>rows.push({type:'Selected / prioritized',text:b.text,reason:b.reason,evidence:b.evidenceId})));d.selectedImpact.forEach(b=>rows.push({type:'Selected impact',text:b.text,reason:b.reason,evidence:b.evidenceId}));$('changeLog').innerHTML=rows.map(x=>`<div class="auditrow"><div class="auditkey">${safe(x.type)}</div><div class="auditvalue">${safe(x.text)}<br><small>${safe(x.reason||'')}</small>${x.evidence?`<br><button class="button tertiary small change-ev" data-id="${x.evidence}">Show evidence</button>`:''}</div></div>`).join('');$$('.change-ev').forEach(b=>b.addEventListener('click',()=>openEvidence(b.dataset.id)));$('changesDialog').showModal()});
-
-function openEvidence(id){const e=evById(id);if(!e)return;ACTIVE_EVIDENCE=e;$('evDialogTitle').textContent=e.capability;$('evDetail').innerHTML=`<div class="audit"><div class="auditrow"><div class="auditkey">Approved evidence</div><div class="auditvalue">${safe(e.approvedLanguage||e.statement)}</div></div><div class="auditrow"><div class="auditkey">Employer / role</div><div class="auditvalue">${safe([e.employer,e.role,e.period].filter(Boolean).join(' · '))}</div></div><div class="auditrow"><div class="auditkey">Scope / authority</div><div class="auditvalue">${safe([e.scope,e.authority,e.attribution].filter(Boolean).join(' · '))}</div></div><div class="auditrow"><div class="auditkey">Provenance</div><div class="auditvalue">${safe(e.sourceType==='source'?'Original resume':`User-validated ${new Date(e.validatedAt).toLocaleDateString()}`)}<br>${safe(e.sourceText||'')}</div></div><div class="auditrow"><div class="auditkey">Restrictions</div><div class="auditvalue">${safe((e.restrictions||[]).join(' ')||'No special restriction beyond source scope.')}</div></div></div>`;$('retireEvidence').textContent=e.status==='Retired'?'Reactivate':'Retire';$('evidenceDialog').showModal()}
-$('retireEvidence').addEventListener('click',()=>{if(!ACTIVE_EVIDENCE)return;ACTIVE_EVIDENCE.status=ACTIVE_EVIDENCE.status==='Retired'?'Verified':'Retired';audit('evidence_status_changed',{id:ACTIVE_EVIDENCE.id,status:ACTIVE_EVIDENCE.status});save();$('evidenceDialog').close();renderEvidence();if(S.currentJob)reanalyzeCurrent()});$('deleteEvidence').addEventListener('click',()=>{if(!ACTIVE_EVIDENCE||ACTIVE_EVIDENCE.sourceType==='source'){toast('Source evidence is immutable. Retire it instead if needed.');return}if(!confirm('Delete this validated evidence record?'))return;S.evidence=S.evidence.filter(e=>e.id!==ACTIVE_EVIDENCE.id);save();$('evidenceDialog').close();renderEvidence();if(S.currentJob)reanalyzeCurrent()});
-function renderEvidence(){const q=E.norm($('evidenceSearch')?.value||''),all=S.evidence||[],filtered=all.filter(e=>!q||E.norm([e.capability,e.statement,e.employer,e.role,e.sourceType].join(' ')).includes(q));$('evCount').textContent=activeEvidence().length;$('validatedCount').textContent=all.filter(e=>e.sourceType==='validation'&&e.status!=='Retired').length;$('capCount').textContent=new Set(activeEvidence().map(e=>e.capability)).size;$('retiredCount').textContent=all.filter(e=>e.status==='Retired').length;$('evidenceList').innerHTML=filtered.length?filtered.map(e=>`<div class="evidence"><div><div class="evcap">${safe(e.capability)}</div><div class="evmeta">${safe([e.employer,e.role,e.period].filter(Boolean).join(' · '))}</div></div><div class="evtext">${safe(e.approvedLanguage||e.statement)}<br><small>${safe(e.sourceType==='source'?'Original resume':'Validated evidence')} · ${safe(e.scope||'Unspecified')} · ${safe(e.authority||'')}</small></div><div><span class="pill ${e.status==='Retired'?'warning':'success'}">${safe(e.status)}</span><br><button class="button tertiary small ev-open" data-id="${e.id}" style="margin-top:7px">Open</button></div></div>`).join(''):'<div class="notice info">No evidence records yet. Build the Master Profile first.</div>';$$('.ev-open').forEach(b=>b.addEventListener('click',()=>openEvidence(b.dataset.id)))}$('evidenceSearch').addEventListener('input',renderEvidence);
-
-function renderProfile(){if(!S.profile){$('identityView').innerHTML='<div class="notice info">No Master Profile yet.</div>';$('rolesView').innerHTML='';$('versionList').innerHTML='';return}const i=S.profile.identity;$('identityView').innerHTML=`<strong style="font-size:1.15rem">${safe(i.name)}</strong><div class="helper">${safe(i.headline)}</div><div class="helper">${safe([i.location,i.phone,i.email,i.linkedin].filter(Boolean).join(' · '))}</div>`;$('rolesView').innerHTML=S.profile.roles.map((r,idx)=>`<div class="profile-role"><div style="display:flex;justify-content:space-between;gap:12px;align-items:start"><div><h3>${safe(r.company)} · ${safe(r.title)}</h3><div class="helper">${safe([r.location,r.dates].filter(Boolean).join(' · '))}</div></div><button class="button tertiary small edit-role" data-index="${idx}">Correct</button></div><ul>${[...r.bullets,...r.impact].slice(0,6).map(b=>`<li>${safe(b.text)}</li>`).join('')}</ul></div>`).join('');$$('.edit-role').forEach(b=>b.addEventListener('click',()=>openRole(+b.dataset.index)));$('versionList').innerHTML=(S.profileVersions||[]).slice().reverse().map(v=>`<div class="versionitem"><div><strong>Master Profile v${v.number}</strong><div class="helper">${safe(v.reason)} · ${new Date(v.createdAt).toLocaleString()}</div></div><button class="button tertiary small restore-version" data-id="${v.id}">Restore</button></div>`).join('');$$('.restore-version').forEach(b=>b.addEventListener('click',()=>restoreVersion(b.dataset.id)))}
-$('editIdentity').addEventListener('click',()=>{if(!S.profile){toast('Build the Master Profile first.');return}const i=S.profile.identity;$('idName').value=i.name||'';$('idHeadline').value=i.headline||'';$('idLocation').value=i.location||'';$('idPhone').value=i.phone||'';$('idEmail').value=i.email||'';$('idLinkedin').value=i.linkedin||'';$('identityDialog').showModal()});$('saveIdentity').addEventListener('click',()=>{const i=S.profile.identity;i.name=$('idName').value.trim();i.headline=$('idHeadline').value.trim();i.location=$('idLocation').value.trim();i.phone=$('idPhone').value.trim();i.email=$('idEmail').value.trim();i.linkedin=$('idLinkedin').value.trim();pushVersion('Identity / positioning correction');save();$('identityDialog').close();renderProfile();toast('Master Profile version created.')});$('viewSource').addEventListener('click',()=>{if(!S.source){toast('No source resume.');return}$('sourceText').textContent=S.source.text;$('sourceDialog').showModal()});
-function restoreVersion(id){const v=S.profileVersions.find(x=>x.id===id);if(!v)return;if(!confirm(`Restore Master Profile v${v.number} as current? Later versions remain in history.`))return;S.profile=clone(v.profile);pushVersion(`Restored from v${v.number}`);save();renderProfile();toast('Prior profile restored as a new current version.');if(S.currentJob)reanalyzeCurrent()}
-
-
-function openRequirement(i){const a=S.currentAnalysis;if(!a)return;ACTIVE_REQ=i;const c=a.criteria[i],m=a.matches[i];$('reqTitle').textContent=c.label;$('reqClass').value=c.classification;$('reqFit').value=m.status;$('reqEvidence').innerHTML=`<option value="">No evidence</option>${activeEvidence().map(e=>`<option value="${e.id}">${safe(e.employer?e.employer+' — ':'')}${safe((e.approvedLanguage||e.statement).slice(0,90))}</option>`).join('')}`;$('reqEvidence').value=m.bestEvidenceId||'';$('requirementDialog').showModal()}
-$('saveRequirement').addEventListener('click',()=>{if(ACTIVE_REQ===null||!S.currentAnalysis)return;const a=S.currentAnalysis,c=a.criteria[ACTIVE_REQ],m=a.matches[ACTIVE_REQ];c.classification=$('reqClass').value;m.status=$('reqFit').value;m.bestEvidenceId=$('reqEvidence').value||null;m.reason='User-corrected assessment.';m.gapType=m.status==='Strong'?'None':m.status==='Partial'?'Weakly expressed / partial evidence':m.status==='Adjacent'?'Adjacent evidence':c.classification==='Mandatory'?'Mandatory / capability gap':'Genuine capability gap';a.scores=E.scoreAnalysis(a.criteria,a.matches,a.knockouts,S.profile,activeEvidence(),a.job.metadata);a.recommendation=E.recommend(a.scores,a.criteria,a.matches,a.knockouts);a.draft=E.generateDraft(S.profile,activeEvidence(),a.criteria,a.matches,a.job.metadata,a.hiringProblem);audit('analysis_corrected',{criterion:c.label,status:m.status,classification:c.classification});$('requirementDialog').close();save();renderAnalysis();toast('Analysis corrected and recalculated.')});
-function openRole(i){if(!S.profile?.roles?.[i])return;ACTIVE_ROLE=i;const r=S.profile.roles[i];$('roleCompany').value=r.company||'';$('roleTitle').value=r.title||'';$('roleDates').value=r.dates||'';$('roleLocation').value=r.location||'';$('roleDialog').showModal()}
-$('saveRole').addEventListener('click',()=>{if(ACTIVE_ROLE===null||!S.profile?.roles?.[ACTIVE_ROLE])return;const r=S.profile.roles[ACTIVE_ROLE],old={company:r.company,title:r.title,dates:r.dates,location:r.location};r.company=$('roleCompany').value.trim();r.title=$('roleTitle').value.trim();r.dates=$('roleDates').value.trim();r.location=$('roleLocation').value.trim();S.evidence.forEach(e=>{if(e.sourceType==='source'&&e.employer===old.company&&e.role===old.title){e.employer=r.company;e.role=r.title;e.period=r.dates}});pushVersion(`Corrected role structure: ${r.company}`);audit('role_structure_corrected',{from:old,to:{company:r.company,title:r.title,dates:r.dates,location:r.location}});$('roleDialog').close();save();renderProfile();if(S.currentJob)reanalyzeCurrent();toast('Role structure corrected; original source remains unchanged.')});
-
-function hydrateSettings(){$('settingsResumeText').value=S.source?.text||'';$('portfolioUrl').value=S.settings.portfolioUrl||'';$('workAuthorization').value=S.settings.workAuthorization||'';$('travelReady').checked=!!S.settings.travelReady;$('templateMode').value=S.settings.templateMode||'premium'}
-$('saveSettings').addEventListener('click',()=>{S.settings.portfolioUrl=$('portfolioUrl').value.trim();S.settings.workAuthorization=$('workAuthorization').value.trim();S.settings.travelReady=$('travelReady').checked;S.settings.templateMode=$('templateMode').value;if(S.profile)S.profile.identity.portfolio=S.settings.portfolioUrl;save();toast('Settings saved.');if(S.currentJob)reanalyzeCurrent()});
-
-function download(content,name,type='text/plain'){const blob=content instanceof Blob?content:new Blob([content],{type}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),500)}function backup(){download(JSON.stringify(S,null,2),`Pursuit-Backup-${new Date().toISOString().slice(0,10)}.json`,'application/json')}$('exportBackup').addEventListener('click',backup);$('backupAll').addEventListener('click',backup);$('importBackup').addEventListener('change',async e=>{const f=e.target.files?.[0];if(!f)return;try{const x=JSON.parse(await f.text());if(!x.version||!Array.isArray(x.evidence))throw new Error('Not a Pursuit backup.');S={...clone(DEFAULT),...x};save();renderAll();toast('Backup restored.')}catch(err){toast(err.message)}});$('resetAll').addEventListener('click',()=>{if(!confirm('Reset all local Pursuit data? Export a backup first if you may need it.'))return;localStorage.removeItem(KEY);S=clone(DEFAULT);renderAll();navigate('analyze');toast('Local data reset.')});
-
-function docxXml(d){const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');const p=(t,b=false)=>`<w:p><w:r><w:rPr>${b?'<w:b/>':''}<w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">${esc(t)}</w:t></w:r></w:p>`;const h=t=>`<w:p><w:pPr><w:spacing w:before="140" w:after="50"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="22"/></w:rPr><w:t>${esc(t)}</w:t></w:r></w:p>`;const bullet=t=>`<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:rPr><w:sz w:val="19"/></w:rPr><w:t xml:space="preserve">${esc(t)}</w:t></w:r></w:p>`;const br='<w:p><w:r><w:br w:type="page"/></w:r></w:p>';let body=p(d.identity.name,true)+p(d.identity.headline,true)+p([d.identity.location,d.identity.phone,d.identity.email,d.identity.linkedin].filter(Boolean).join(' | '))+h('PROFESSIONAL SUMMARY')+p(d.summary)+h('SELECTED IMPACT SNAPSHOT');d.impact.forEach(x=>body+=p(`${x.metric||'Impact'} — ${x.text}`,true));body+=h('CORE CAPABILITIES');d.capabilities.forEach(x=>body+=bullet(x));body+=h('PROFESSIONAL EXPERIENCE');const first=d.roles.slice(0,1),rest=d.roles.slice(1);first.forEach(r=>{body+=p(`${r.company} | ${r.title} | ${r.dates}`,true);r.bullets.forEach(x=>body+=bullet(x.text))});body+=br;rest.forEach(r=>{body+=p(`${r.company} | ${r.title} | ${r.dates}`,true);r.bullets.forEach(x=>body+=bullet(x.text))});body+=h('SELECTED IMPACT');d.selectedImpact.forEach(x=>body+=bullet(x.text));body+=h('SCIENTIFIC FOUNDATION & EARLY CAREER');(d.early||[]).forEach(x=>body+=bullet(x));body+=h('EDUCATION & CERTIFICATIONS');d.education.forEach(x=>body+=bullet(x));return`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720"/></w:sectPr></w:body></w:document>`}
-async function exportDocx(){const d=S.currentAnalysis?.draft;if(!d){toast('Analyze a role first.');return}if(!window.JSZip){toast('Word exporter failed to load.');return}const z=new JSZip();z.file('[Content_Types].xml','<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>');z.folder('_rels').file('.rels','<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');const w=z.folder('word');w.file('document.xml',docxXml(d));w.file('numbering.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/><w:lvlText w:val="•"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>');const blob=await z.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});download(blob,`Pursuit-${(S.currentJob?.metadata?.company||'Role').replace(/\W+/g,'-')}-${(S.currentJob?.metadata?.title||'Resume').replace(/\W+/g,'-')}.docx`,'application/vnd.openxmlformats-officedocument.wordprocessingml.document')}
-$('exportDocx').addEventListener('click',exportDocx);$('exportPdf').addEventListener('click',()=>{if(!S.currentAnalysis){toast('Analyze a role first.');return}if(!window.html2pdf){toast('PDF exporter failed to load.');return}const node=document.createElement('div');node.style.background='white';$$('.resume-page').forEach(p=>node.appendChild(p.cloneNode(true)));document.body.appendChild(node);html2pdf().set({margin:0,filename:`Pursuit-${(S.currentJob?.metadata?.company||'Role').replace(/\W+/g,'-')}-${(S.currentJob?.metadata?.title||'Resume').replace(/\W+/g,'-')}.pdf`,image:{type:'jpeg',quality:.98},html2canvas:{scale:2,useCORS:true},jsPDF:{unit:'in',format:'letter',orientation:'portrait'},pagebreak:{mode:['css','legacy']}}).from(node).save().then(()=>node.remove()).catch(()=>{node.remove();toast('PDF export failed.')})});
-
-const NDD=`Representative ndd Product Manager — Digital Solutions regression fixture
-Responsibilities
-Own digital product strategy, portfolio priorities, product vision, roadmaps, requirements, backlog, lifecycle, Agile delivery, releases, and success metrics.
-Use customer and market insight to shape requirements, business cases, value propositions, positioning, launches, commercialization, adoption, and business performance.
-Work cross-functionally with Engineering, R&D, Quality, Regulatory Affairs, Clinical Affairs, Sales, and Marketing.
-Drive healthcare interoperability and digital integration, including APIs, EHR/EMR integrations, healthcare data exchange, and healthcare IT workflows.
-Requirements
-5+ years of Product Management in medical devices, digital health, healthcare software/IT, diagnostics, or a similar healthcare-technology environment.
-Demonstrated product strategy, roadmaps, business cases, go-to-market, commercialization, and lifecycle management.
-Healthcare interoperability / EHR / EMR / APIs / healthcare data exchange is strongly desirable.
-Relevant degree required; advanced degree or product-management certification is advantageous.
-U.S. role; visa sponsorship is not available.`
-$('loadNddDemo').addEventListener('click',()=>{$('jdText').value=NDD;toast('ndd regression JD loaded.')});
-$('runTruthTests').addEventListener('click',()=>{const cases=[['Matrix leadership must not become direct reports','Managed 16 direct reports',['Led a 16-person cross-functional matrix team']],['Revenue impact must not become budget ownership','Owned a $300M budget',['Tracked approximately €300M in cumulative commercial impact']],['API must not become EHR interoperability','Led EHR/EMR integration',['Integrated Salesforce and ERP data through APIs']],['Pilot must not become production','Deployed AI orchestration to production',['Explored MCP-based AI orchestration']]];let pass=0,txt='';cases.forEach(([n,p,s])=>{const r=E.truthCheck(p,s),ok=!r.ok;if(ok)pass++;txt+=`${ok?'PASS':'FAIL'} — ${n}\n`});$('truthResults').textContent=`${pass}/${cases.length} passed\n\n${txt}`});
-$('runNddTest').addEventListener('click',()=>{if(!S.profile){$('nddResults').textContent='Build the Master Profile first.';return}const a=E.analyze({jd:NDD,profile:S.profile,evidence:activeEvidence(),jobMeta:{company:'ndd Medical Technologies',title:'Product Manager - Digital Solutions',location:'United States'},profileFacts:S.settings}),map={};a.criteria.forEach((c,i)=>map[c.category]=a.matches[i].status);const expected=['product_strategy','healthcare_domain','interoperability','regulated','customer_commercial'],missing=expected.filter(x=>!a.criteria.some(c=>c.category===x));const pass=!missing.length&&map.product_strategy==='Strong'&&map.healthcare_domain==='Adjacent'&&['Adjacent','Unsupported'].includes(map.interoperability)&&['Partial','Adjacent'].includes(map.regulated);$('nddResults').textContent=`${pass?'PASS':'FAIL'}\nTop five: ${a.criteria.map(c=>c.category).join(', ')}\nStatuses: ${JSON.stringify(map,null,2)}\nDecision: ${a.recommendation.label}\nATS: ${a.scores.ats}/100${missing.length?`\nMissing: ${missing.join(', ')}`:''}`});
-
-function renderStatus(){const ready=!!S.profile&&activeEvidence().length>0;$('profilePill').textContent=ready?'Profile ready':'Profile needed';$('profilePill').className=`pill ${ready?'success':'warning'}`;$('profileSetupStatus').textContent=ready?`${activeEvidence().length} evidence records`:'Not ready';$('profileSetupStatus').className=`pill ${ready?'success':'warning'}`;$('quickProfileSetup').classList.toggle('hidden',ready);$('profileReadySummary').classList.toggle('hidden',!ready);if(ready)$('profileReadySummary').textContent=`Master Profile ready: ${S.profile.roles.length} roles · ${activeEvidence().length} active evidence records. Open Master Profile or Settings to review/change it.`;$('analyzeBtn').disabled=!($('confirmJD').checked&&ready)}
-function renderAll(){renderStatus();renderEvidence();renderProfile();hydrateSettings();if(S.currentAnalysis){renderAnalysis();$('analysisResults').classList.remove('hidden');$('jdText').value=S.currentJob?.jd||''}else $('analysisResults').classList.add('hidden')}
-$('settingsResumeText').value=S.source?.text||'';renderAll();
-
-// Automated browser smoke mode used before packaging; never runs in normal use.
-if(new URLSearchParams(location.search).get('smoke')==='1'){
-  try{
-    const sample=`ALEX MORGAN\nDigital Product Leader | Data Platforms | Life Sciences\nBoston, MA | alex@example.com\n\nPROFESSIONAL SUMMARY\nDigital product leader defining product strategy and roadmaps for data products in life sciences. Lead cross-functional teams across Product, Engineering, Data Science, Sales, and Marketing.\n\nPROFESSIONAL EXPERIENCE\nSenior Product Owner\nExample Life Sciences, Boston, MA | 2020–Present\n• Own product strategy, roadmaps, prioritization, and business cases for a portfolio of digital products.\n• Lead API-based data integration across CRM, ERP, and cloud data platforms.\n• Partner with Sales and Marketing on customer discovery, launch readiness, adoption, and value measurement.\n\nEDUCATION & CERTIFICATIONS\nB.S., Biological Sciences`;
-    const p=E.parseResume(sample,{filename:'smoke.txt'}),ev=E.buildEvidence(p),a=E.analyze({jd:NDD,profile:p,evidence:ev,jobMeta:{company:'ndd Medical Technologies',title:'Product Manager - Digital Solutions',location:'United States'},profileFacts:{}});
-    document.documentElement.dataset.smoke=(a.criteria.length===5&&a.draft.roles.length>0&&a.scores.ats>0)?'PASS':'FAIL';
-    const marker=document.createElement('div');marker.id='smoke-marker';marker.textContent=`SMOKE:${document.documentElement.dataset.smoke}:${a.criteria.map(x=>x.category).join(',')}`;document.body.appendChild(marker);
-  }catch(err){document.documentElement.dataset.smoke='FAIL';const marker=document.createElement('div');marker.id='smoke-marker';marker.textContent=`SMOKE:FAIL:${err.message}`;document.body.appendChild(marker)}
+function migrateOld(){
+  for(const k of ["pursuit_full_build_v6","pursuit_full_build_v5","pursuit_full_build_v4"]){
+    try{
+      const raw=localStorage.getItem(k);if(!raw)continue;
+      const old=JSON.parse(raw);
+      if(!old.source?.text)continue;
+      const profile=E.parseResume(old.source.text);
+      const base=E.evidenceFromProfile(profile,old.source.filename||"Resume");
+      const validated=(old.evidence||[]).filter(e=>e.sourceType==="validation").map(e=>({
+        id:e.id||"m_"+Math.random(),category:e.category||E.classifyText(e.statement||"").category,capability:e.capability||"",
+        statement:e.statement||e.polishedStatement||"",rawValidation:e.rawUserEvidence||e.rawValidation||"",
+        answers:e.answers||{},company:e.company||"",role:e.role||"",period:e.period||"",scope:e.scope||"",
+        authority:e.authority||"",metric:!!e.metric,direct:e.direct===true,sourceType:"validation",sourceLabel:"Remembered from earlier Pursuit build",createdAt:e.createdAt||new Date().toISOString()
+      })).filter(e=>e.statement);
+      return {version:"RC4.6",source:{filename:old.source.filename||"Resume",text:old.source.text,createdAt:old.source.createdAt||new Date().toISOString()},profile,evidence:[...base,...validated],profileFacts:{workAuth:old.profileFacts?.workAuthorization||"",travel:old.profileFacts?.travelReady||""},opportunities:[],currentOpportunityId:null};
+    }catch{}
+  }
+  return clone(DEFAULT);
 }
+function loadState(){
+  try{
+    const raw=localStorage.getItem(KEY);
+    const state=raw?{...clone(DEFAULT),...JSON.parse(raw)}:migrateOld();
+    const oldVersion=state.version||"";
+    state.opportunities=(state.opportunities||[]).map(o=>({...o,archived:o.archived===true,archivedAt:o.archivedAt||null,snapshot:o.snapshot||null}));
+    // RC4.4 rebuilds resume-derived evidence from the original source so older misclassified imports cannot survive an upgrade.
+    if(state.source?.text&&(oldVersion!=="RC4.6"||(state.evidence||[]).some(e=>e.sourceType==="resume"&&!e.evidenceType))){
+      const remembered=(state.evidence||[]).filter(e=>e.sourceType==="validation").map(e=>({...e,evidenceType:"validation",usable:e.usable!==false}));
+      const profile=E.parseResume(state.source.text);
+      state.profile=profile;state.evidence=[...E.evidenceFromProfile(profile,state.source.filename||"Resume"),...remembered];
+    }
+    state.version="RC4.6";
+    return state;
+  }catch{return clone(DEFAULT)}
+}
+
+// ---------- navigation ----------
+function setView(name){
+  $("setupView").classList.toggle("hidden",ready());
+  $("topNav").classList.toggle("hidden",!ready());
+  $("opportunitiesView").classList.toggle("hidden",name!=="opportunities"||!ready());
+  $("profileView").classList.toggle("hidden",name!=="profile"||!ready());
+  $$(".navbtn").forEach(b=>b.classList.toggle("active",b.dataset.view===name));
+  if(name==="profile")renderProfile();
+  if(name==="opportunities")renderRecent();
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+$$(".navbtn").forEach(b=>b.addEventListener("click",()=>setView(b.dataset.view)));
+$("brandHome").addEventListener("click",()=>setView("opportunities"));
+
+// ---------- resume reading ----------
+async function readResumeFile(file){
+  const name=file.name.toLowerCase();
+  if(name.endsWith(".txt"))return await file.text();
+  if(name.endsWith(".docx")){
+    if(!window.mammoth)throw new Error("Word reader could not load. Refresh once or paste the resume text.");
+    return (await mammoth.extractRawText({arrayBuffer:await file.arrayBuffer()})).value;
+  }
+  if(name.endsWith(".pdf")){
+    if(!window.pdfjsLib)throw new Error("PDF reader could not load. Refresh once or upload the Word version.");
+    pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise,pages=[];
+    for(let p=1;p<=pdf.numPages;p++){
+      const page=await pdf.getPage(p),content=await page.getTextContent();
+      const items=content.items.map(i=>({t:i.str,x:i.transform?.[4]||0,y:i.transform?.[5]||0})).filter(i=>i.t.trim());
+      items.sort((a,b)=>Math.abs(b.y-a.y)>2?b.y-a.y:a.x-b.x);
+      let y=null,line=[],lines=[];
+      for(const it of items){
+        if(y!==null&&Math.abs(it.y-y)>3){if(line.length)lines.push(line.join(" "));line=[]}
+        line.push(it.t);y=it.y;
+      }
+      if(line.length)lines.push(line.join(" "));
+      pages.push(lines.join("\n"));
+    }
+    return pages.join("\n");
+  }
+  throw new Error("Use a PDF, Word (.docx), or TXT resume.");
+}
+function installResume(text,filename){
+  if(String(text).trim().length<350)throw new Error("The resume looks incomplete.");
+  const profile=E.parseResume(text);
+  if(!profile.roles.length)throw new Error("Pursuit could not identify your work history. Try the Word file or paste the resume text.");
+  const remembered=(S.evidence||[]).filter(e=>e.sourceType==="validation");
+  const existingOpportunities=Array.isArray(S.opportunities)?S.opportunities:[];
+  S.source={filename,text:String(text).trim(),createdAt:new Date().toISOString()};
+  S.profile=profile;
+  S.evidence=[...E.evidenceFromProfile(profile,filename),...remembered];
+  S.opportunities=existingOpportunities;S.currentOpportunityId=null;
+  save();setView("opportunities");
+  toast(`Profile ready — ${profile.roles.length} roles · ${profile.importHealth?.workItems||0} work evidence items. ${(profile.importHealth?.warnings||[]).length?"Suspicious lines quarantined.":"Import looks healthy."}`);
+}
+async function handleResumeFile(file,status){
+  status.textContent=`Reading ${file.name}...`;
+  try{const text=await readResumeFile(file);installResume(text,file.name);status.textContent=""}
+  catch(e){status.textContent=e.message}
+}
+$("resumeFile").addEventListener("change",()=>{const f=$("resumeFile").files?.[0];if(f)handleResumeFile(f,$("resumeStatus"))});
+$("savePastedResume").addEventListener("click",()=>{try{installResume($("resumePaste").value,"Pasted resume")}catch(e){$("resumeStatus").textContent=e.message}});
+$("replaceResumeFile").addEventListener("change",async()=>{const f=$("replaceResumeFile").files?.[0];if(!f)return;if(!confirm("Replace your source resume? Previously validated evidence will be preserved."))return;try{const t=await readResumeFile(f);installResume(t,f.name);setView("profile")}catch(e){toast(e.message)}});
+
+// ---------- job intake ----------
+$("importJobBtn").addEventListener("click",async()=>{
+  const url=$("jobUrl").value.trim();if(!/^https?:\/\//i.test(url)){toast("Paste a complete career-page URL.");return}
+  const btn=$("importJobBtn");btn.disabled=true;btn.textContent="Importing...";
+  $("importStatus").textContent="Reading the public career page...";
+  let text="";
+  try{const r=await fetch(url,{mode:"cors"});if(r.ok)text=htmlToText(await r.text())}catch{}
+  if(text.length<500){
+    try{const r=await fetch("https://r.jina.ai/"+url);if(r.ok)text=await r.text()}catch{}
+  }
+  btn.disabled=false;btn.textContent="Import";
+  if(text.length<500){$("importStatus").textContent="This site blocked import. Paste the job description below instead.";return}
+  $("jdText").value=text;$("importStatus").textContent="Job description imported. Review it if you want, then Analyze role.";
+});
+function htmlToText(html){
+  const d=new DOMParser().parseFromString(html,"text/html");d.querySelectorAll("script,style,nav,footer,header,aside,svg,form").forEach(n=>n.remove());return(d.body?.innerText||"").replace(/\n{3,}/g,"\n\n").trim()
+}
+$("analyzeBtn").addEventListener("click",()=>runAnalysis(true));
+function runAnalysis(newOpportunity=false){
+  const jd=$("jdText").value.trim(),url=$("jobUrl").value.trim(),btn=$("analyzeBtn");
+  if(jd.length<500){toast("Add a more complete job description first.");return}
+  btn.disabled=true;btn.textContent="Reading between the JD lines…";
+  try{
+    const analysis=E.analyze(jd,S.profile,S.evidence,S.profileFacts,url);
+    let opp=currentOpp();
+    if(newOpportunity||!opp){
+      opp={id:"j_"+Date.now().toString(36),jd,url,analysis,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),archived:false,archivedAt:null,snapshot:null};
+      S.opportunities.unshift(opp);S.opportunities=S.opportunities.slice(0,100);S.currentOpportunityId=opp.id;
+    }else{
+      if(opp.archived){toast("Archived analyses stay frozen. Reanalyze it with your current profile instead.");return}
+      opp.jd=jd;opp.url=url;opp.analysis=analysis;opp.updatedAt=new Date().toISOString();
+    }
+    save();renderAnalysis(analysis);$("opportunityHome").classList.add("hidden");$("analysisView").classList.remove("hidden");window.scrollTo({top:0,behavior:"smooth"});
+  }catch(err){
+    console.error("Pursuit analysis failed",err);
+    toast("Pursuit hit an analysis error. Nothing was changed.");
+    $("importStatus").textContent="Analysis stopped because of an app error. Nothing was saved.";
+  }finally{
+    btn.disabled=false;btn.textContent="Analyze this role →";
+  }
+}
+$("backToNew").addEventListener("click",newOpportunity);
+function newOpportunity(){
+  S.currentOpportunityId=null;save();$("jdText").value="";$("jobUrl").value="";$("importStatus").textContent="";$("analysisView").classList.add("hidden");$("opportunityHome").classList.remove("hidden");window.scrollTo({top:0,behavior:"smooth"});
+}
+
+// ---------- render analysis ----------
+function renderAnalysis(a){
+  renderOpportunityHeader(a);
+  const archived=!!currentOpp()?.archived;
+  $("decisionLabel").textContent=a.recommendation.label;$("decisionReason").textContent=a.recommendation.reason;$("decisionAside").textContent=a.recommendation.aside||"";
+  const dc=document.querySelector(".decision-card");dc.classList.remove("tone-green","tone-amber","tone-red");dc.classList.add(`tone-${a.recommendation.tone||"amber"}`);
+  const em=effectiveMeta(currentOpp(),a);
+  $("roleMeta").innerHTML=`<strong>${esc(em.title||"Opportunity")}</strong>${esc(em.company||"")}<br>${esc(em.location||"")}`;
+  $("atsScore").textContent=`${a.scores.ats}/100`;
+  const ra=a.scores.recruiterAlignment,ma=a.scores.managerAlignment,cf=a.evidenceConfidence;
+  $("recruiterScore").textContent=ra.label;$("managerScore").textContent=ma.label;$("confidenceScore").textContent=cf.label;
+  $("atsExplanation").textContent=atsExplanation(a);$("recruiterExplanation").textContent=ra.reason;$("managerExplanation").textContent=ma.reason;$("confidenceExplanation").textContent=cf.reason;
+  setLevel($("recruiterBox"),ra.label);setLevel($("managerBox"),ma.label);setLevel($("confidenceBox"),cf.label);
+  $("primaryRisk").textContent=a.primaryRisk;$("hiringProblem").textContent=a.hiringProblem;
+  const changes=a.whatWouldChange||[];$("decisionChange").classList.toggle("hidden",!changes.length);$("decisionChangeList").innerHTML=changes.map(x=>`<div class="decision-change-row"><span>${esc(x.label)}</span><em>${x.changesDecision?"Could change the recommendation":"Could strengthen the case"}</em></div>`).join("");
+  $("topFive").innerHTML=a.criteria.map((c,i)=>criterionHTML(c,a.matches[i],i)).join("");
+  const checks=a.gates.filter(g=>g.status!=="clear");$("quickChecksCard").classList.toggle("hidden",!checks.length);$("quickChecks").innerHTML=checks.map(g=>checkHTML(g,archived)).join("");if(!archived)bindChecks();
+  const gaps=(a.clarifications||[]).map(x=>({criterion:a.criteria[x.index],match:a.matches[x.index],index:x.index,changesDecision:x.changesDecision}));
+  $("gapCard").classList.toggle("hidden",!gaps.length);$("gapList").innerHTML=gaps.map(g=>gapHTML(g,archived)).join("");if(!archived)$$('.validate-gap').forEach(b=>b.addEventListener("click",()=>openGap(Number(b.dataset.index))));
+  renderOutput(a);renderNotAdded(a);
+}
+function renderOpportunityHeader(a){
+  const o=currentOpp();if(!o)return;
+  const meta=effectiveMeta(o,a),facts=(a.meta?.facts||[]).filter(Boolean);
+  const title=meta.title||"Opportunity",company=meta.company||"Company not identified";
+  $("oppHeaderCompany").textContent=company;
+  $("oppHeaderTitle").textContent=title;
+
+  const level=(facts.find(x=>/^(Associate Director|Senior Director|Executive Director|Director|Senior Manager|Senior Product Manager|Product Manager)$/i.test(x))||"").replace(/\b\w/g,c=>c.toUpperCase());
+  const industry=facts.find(x=>/^(Life sciences|Healthcare technology)$/i.test(x))||"";
+  const rawLocation=(meta.location||"").replace(/^location\s*[:\-]\s*/i,"").trim();
+  const context=[rawLocation,industry,level].filter(Boolean);
+  $("oppContextLine").textContent=context.join(" · ");
+
+  const anchors=[];
+  const add=x=>{if(x&&!anchors.includes(x))anchors.push(x)};
+  const veeva=facts.find(x=>/veeva/i.test(x));
+  if(veeva)add(/strongly preferred/i.test(veeva)?"Veeva preferred":veeva.replace(/CRM/i,"CRM"));
+  const years=facts.find(x=>/^\d+\+ years$/i.test(x));if(years)add(years);
+  const commercialMedical=facts.find(x=>/Commercial \+ Medical/i.test(x));
+  if(commercialMedical)add(/crm/i.test(title)||facts.some(x=>/crm/i.test(x))?"CRM / Commercial & Medical":"Commercial & Medical");
+  else{
+    const commercial=facts.find(x=>/^Commercial$/i.test(x));
+    if(commercial)add(/crm/i.test(title)||facts.some(x=>/crm/i.test(x))?"CRM / Commercial":"Commercial");
+  }
+  for(const f of facts){
+    if(anchors.length>=3)break;
+    if([level,industry,veeva,years,commercialMedical].filter(Boolean).some(x=>x===f))continue;
+    if(/^(Hybrid|Remote|On-site)$/i.test(f)&&rawLocation)continue;
+    if(/CRM platform ownership/i.test(f)&&/CRM/i.test(title))continue;
+    add(f);
+  }
+  $("oppAnchorLine").textContent=anchors.join(" · ");
+  $("oppRoleThesis").textContent=a.hiringProblem||"Pursuit is focusing on the requirements most likely to drive the hiring decision.";
+  const dates=[`Analyzed ${fmtDate(a.createdAt||o.createdAt)}`];
+  if(o.archivedAt)dates.push(`Archived ${fmtDate(o.archivedAt)}`);
+  $("oppAnalyzedDate").textContent=dates.join(" · ");
+  $("oppArchiveBadge").classList.toggle("hidden",!o.archived);
+  $("archiveOppBtn").textContent=o.archived?"Restore to active":"Archive";
+  $("reanalyzeOppBtn").classList.toggle("hidden",!o.archived);
+  $("sourceLink").classList.toggle("hidden",!/^https?:\/\//i.test(o.url||""));
+  if(/^https?:\/\//i.test(o.url||""))$("sourceLink").href=o.url;
+}
+function openJdDialog(){
+  const o=currentOpp();if(!o)return;
+  const a=displayedAnalysis(o),meta=effectiveMeta(o,a);
+  $("jdDialogTitle").textContent=`${meta.company||""}${meta.company?" — ":""}${meta.title||"Opportunity"}`;
+  $("jdDialogText").textContent=o.jd||"No job description saved.";
+  $("jdDialog").showModal();
+}
+function openMetaDialog(){
+  const o=currentOpp();if(!o)return;const meta=effectiveMeta(o);
+  $("metaCompany").value=meta.company||"";$("metaTitle").value=meta.title||"";$("metaLocation").value=meta.location||"";$("metaDialog").showModal();
+}
+$("editMetaBtn").addEventListener("click",openMetaDialog);
+$("saveMetaBtn").addEventListener("click",()=>{
+  const o=currentOpp();if(!o)return;
+  o.metaOverride={company:$("metaCompany").value.trim(),title:$("metaTitle").value.trim(),location:$("metaLocation").value.trim()};o.updatedAt=new Date().toISOString();save();$("metaDialog").close();renderAnalysis(displayedAnalysis(o));toast("Opportunity details saved.");
+});
+$("viewJdBtn").addEventListener("click",openJdDialog);
+$("copyJobSearchBtn").addEventListener("click",async()=>{
+  const o=currentOpp();if(!o)return;
+  const meta=effectiveMeta(o,displayedAnalysis(o));
+  const company=meta.company||"",title=meta.title||"";
+  const query=[company,title?`"${title}"`:""].filter(Boolean).join(" ");
+  if(!query)return toast("Add the company and job title first.");
+  await copyText(query);
+  toast("Job search copied — paste it into LinkedIn Jobs.");
+});
+$("archiveOppBtn").addEventListener("click",()=>{
+  const o=currentOpp();if(!o)return;
+  if(o.archived){o.archived=false;o.updatedAt=new Date().toISOString();toast("Restored to active opportunities.")}
+  else{o.snapshot=clone(o.analysis);o.archived=true;o.archivedAt=new Date().toISOString();o.updatedAt=o.archivedAt;toast("Archived. This analysis is now a frozen snapshot.")}
+  save();renderAnalysis(displayedAnalysis(o));
+});
+$("reanalyzeOppBtn").addEventListener("click",()=>{
+  const old=currentOpp();if(!old||!old.archived)return;
+  const btn=$("reanalyzeOppBtn"),prior=btn.textContent;btn.disabled=true;btn.textContent="Reanalyzing…";
+  try{
+    const analysis=E.analyze(old.jd,S.profile,S.evidence,S.profileFacts,old.url||"");
+    const fresh={id:"j_"+Date.now().toString(36),jd:old.jd,url:old.url||"",analysis,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),archived:false,archivedAt:null,snapshot:null,reanalyzedFrom:old.id,metaOverride:old.metaOverride?clone(old.metaOverride):null};
+    S.opportunities.unshift(fresh);S.opportunities=S.opportunities.slice(0,100);S.currentOpportunityId=fresh.id;save();
+    $("jdText").value=fresh.jd;$("jobUrl").value=fresh.url;renderAnalysis(analysis);toast("Reanalyzed with your current profile. The archived version stayed unchanged.");window.scrollTo({top:0,behavior:"smooth"});
+  }catch(err){
+    console.error("Pursuit reanalysis failed",err);toast("Reanalysis hit an app error. The archived snapshot is unchanged.");
+  }finally{btn.disabled=false;btn.textContent=prior}
+});
+function setLevel(el,label){el.classList.remove("level-excellent","level-strong","level-limited","level-weak","level-high","level-medium","level-low");if(el)el.classList.add(`level-${String(label||"").toLowerCase().replace(/\s+/g,"-")}`)}
+function atsExplanation(a){const weak=a.criteria.map((c,i)=>({c,m:a.matches[i]})).filter(x=>x.m.status!=="Strong");return weak.length?`${weak.length} of the five decision drivers are not yet explicit/direct in the resume.`:"The five decision drivers are explicitly supported in the resume."}
+function criterionHTML(c,m,i){
+  const evidence=m.best?.statement||"No defensible evidence found.";
+  const remembered=m.remembered?`<span class="remembered-note">✓ Verified earlier</span>`:"";
+  const tier=c.tier===1?"HIRING GATE":"MAJOR DIFFERENTIATOR";
+  return `<div class="criterion"><div class="rank">${i+1}</div><div><div class="criterion-title">${esc(c.label)}</div><div class="criterion-req"><b>${tier}</b> · ${esc(c.requirement)}</div><div class="criterion-why">${esc(c.why||"")}</div></div><div class="evidence-copy"><strong>Your evidence:</strong> ${esc(evidence)}<br>${esc(m.reason)}${remembered}</div><span class="fit ${m.status.toLowerCase()}">${esc(m.status)}</span></div>`;
+}
+function gapHTML(g,archived=false){
+  const confirmed=g.match.confirmedGap===true,label=g.changesDecision?"COULD CHANGE THE DECISION":"WORTH CLARIFYING";
+  return `<div class="gap-item"><div><span class="gap-type">${esc(label)}</span><h3>${esc(g.criterion.label)}</h3><p>${esc(g.match.reason)}</p></div>${archived?`<span class="archive-inline">Archived snapshot</span>`:confirmed?`<span class="fit gap">🚧 Honest gap saved</span>`:`<button class="secondary validate-gap" data-index="${g.index}">Check this</button>`}</div>`;
+}
+function checkHTML(g,archived=false){
+  let controls="";
+  if(g.category==="sponsorship")controls=`<button class="ghost check-set" data-kind="workAuth" data-value="authorized">I am authorized</button><button class="ghost check-set" data-kind="workAuth" data-value="sponsorship">I need sponsorship</button>`;
+  else if(g.category==="travel")controls=`<button class="ghost check-set" data-kind="travel" data-value="yes">I can travel</button><button class="ghost check-set" data-kind="travel" data-value="no">I cannot</button>`;
+  return `<div class="check-item"><div><h3>${esc(g.label)}</h3><p>${esc(g.reason)}</p></div><div class="button-row">${archived?`<span class="archive-inline">Archived snapshot</span>`:controls}</div></div>`;
+}
+function bindChecks(){
+  $$(".check-set").forEach(b=>b.addEventListener("click",()=>{S.profileFacts[b.dataset.kind]=b.dataset.value;save();runAnalysis(false)}));
+}
+
+// ---------- gap validation ----------
+function openGap(index){
+  const opp=currentOpp();if(!opp)return;const c=opp.analysis.criteria[index],m=opp.analysis.matches[index];ACTIVE_GAP={index,criterion:c,match:m};PENDING=null;
+  $("gapTitle").textContent=c.label;$("gapContext").textContent=m.reason;$("gapFreeText").value="";$("gapRolePeriod").value="";
+  $("wordingPreview").classList.add("hidden");$("acceptEvidenceBtn").classList.add("hidden");$("suggestWordingBtn").classList.remove("hidden");
+  const qs=E.validationQuestions(c.category);
+  $("gapQuestions").innerHTML=qs.map(q=>`<div class="question" data-q="${q.id}" data-multi="${q.multi?"1":"0"}"><label>${esc(q.label)}</label><div class="chips">${q.options.map(o=>`<button type="button" class="chip" data-value="${esc(o)}">${esc(o)}</button>`).join("")}</div></div>`).join("");
+  $$("#gapQuestions .chip").forEach(ch=>ch.addEventListener("click",()=>{const q=ch.closest(".question");if(q.dataset.multi!=="1")q.querySelectorAll(".chip").forEach(x=>x.classList.remove("selected"));if(/^None$/i.test(ch.dataset.value)){q.querySelectorAll(".chip").forEach(x=>x.classList.remove("selected"));ch.classList.add("selected")}else{q.querySelectorAll(".chip").forEach(x=>{if(/^None$/i.test(x.dataset.value))x.classList.remove("selected")});ch.classList.toggle("selected") }}));
+  $("gapDialog").showModal();
+}
+function gapAnswers(){const a={};$$("#gapQuestions .question").forEach(q=>a[q.dataset.q]=[...q.querySelectorAll(".chip.selected")].map(x=>x.dataset.value));return a}
+$("suggestWordingBtn").addEventListener("click",()=>{
+  if(!ACTIVE_GAP)return;const answers=gapAnswers(),flat=Object.values(answers).flat(),free=$("gapFreeText").value.trim();
+  if(!flat.length&&!free){toast("Choose the closest answer or add one short sentence.");return}
+  if(flat.length&&flat.every(x=>/^None$|^No$/i.test(x))&&!free){const wording=E.negativeWording(ACTIVE_GAP.criterion.category,answers);PENDING={answers,free:"",wording,rolePeriod:$("gapRolePeriod").value.trim(),negative:true};$("wordingText").textContent=wording;$("wordingScope").textContent="Good. We will remember the honest gap and stop asking about it unless a future role changes the scope.";$("wordingPreview").classList.remove("hidden");$("acceptEvidenceBtn").classList.remove("hidden");$("acceptEvidenceBtn").textContent="Remember this gap";$("suggestWordingBtn").classList.add("hidden");return}
+  const wording=E.polishedEvidence(ACTIVE_GAP.criterion.category,answers,free);
+  PENDING={answers,free,wording,rolePeriod:$("gapRolePeriod").value.trim(),negative:false};$("acceptEvidenceBtn").textContent="Accept & remember";
+  $("wordingText").textContent=wording;$("wordingScope").textContent="This wording is intentionally limited to the scope you just validated.";
+  $("wordingPreview").classList.remove("hidden");$("acceptEvidenceBtn").classList.remove("hidden");$("suggestWordingBtn").classList.add("hidden");
+});
+$("acceptEvidenceBtn").addEventListener("click",()=>{
+  if(!PENDING||!ACTIVE_GAP)return;
+  const rec=E.evidenceRecordFromValidation(ACTIVE_GAP.criterion.category,ACTIVE_GAP.criterion,PENDING.answers,PENDING.free,PENDING.rolePeriod,PENDING.wording,PENDING.negative===true);
+  S.evidence.push(rec);save();$("gapDialog").close();toast(PENDING.negative?"Honest gap remembered. No need to answer that again.":"Saved to your profile. Pursuit will reuse this next time.");runAnalysis(false);
+});
+$("leaveGapBtn").addEventListener("click",()=>$("gapDialog").close());
+$$("[data-close]").forEach(b=>b.addEventListener("click",()=>$(b.dataset.close).close()));
+
+// ---------- output ----------
+function renderOutput(a){
+  const out=a.output,sections=[];
+  sections.push(outputSection("Recommended professional summary",out.summary));
+  sections.push(outputSection("Capabilities worth emphasizing",out.capabilities.join(" • ")));
+  for(const r of out.roleSections){
+    let body=`${r.title}\n${r.companyLine}\n\n${r.bullets.map(x=>"• "+x).join("\n")}`;
+    if(r.impactKeep.length)body+=`\n\nSELECTED IMPACT - KEEP / PRIORITIZE\n${r.impactKeep.map(x=>"• "+x).join("\n")}`;
+    if(r.impactDeprioritize.length)body+=`\n\nDEPRIORITIZE FOR THIS ROLE\n${r.impactDeprioritize.map(x=>"• "+x).join("\n")}`;
+    sections.push(outputSection(r.companyLine.split("|")[0]||r.title,body));
+  }
+  if(out.additions.length){
+    const body=out.additions.map(x=>`• ${x.statement}${x.company?` [${x.company}${x.role?" | "+x.role:""}]`:""}`).join("\n");
+    sections.push(outputSection("Validated additions worth using",body));
+  }
+  $("tailoredOutput").innerHTML=sections.join("");
+  $$(".copy-section").forEach(b=>b.addEventListener("click",()=>copyText(b.closest(".output-section").querySelector(".output-body").innerText)));
+}
+function outputSection(title,body){return `<div class="output-section"><div class="output-section-head"><h3>${esc(title)}</h3><button class="copybtn copy-section">Copy</button></div><div class="output-body">${esc(body)}</div></div>`}
+$("copyAllBtn").addEventListener("click",()=>{const a=displayedAnalysis();if(a)copyText(a.fullText)});
+async function copyText(t){try{await navigator.clipboard.writeText(t);toast("Copied.")}catch{const ta=document.createElement("textarea");ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();toast("Copied.")}}
+function renderNotAdded(a){
+  const rows=a.criteria.map((c,i)=>({c,m:a.matches[i]})).filter(x=>["Gap","Adjacent"].includes(x.m.status)||x.m.gapType==="Resume gap");
+  $("notAddedList").innerHTML=rows.length?`<div class="not-added">${rows.map(x=>`<div class="not-added-row"><strong>${esc(x.c.label)}</strong><span>${esc(x.m.status==="Gap"?"Not added because no verified evidence supports this requirement.":x.m.reason)}</span></div>`).join("")}</div>`:`<div class="helper">No unsupported top-five claim was needed for this application.</div>`;
+}
+
+// ---------- opportunity library ----------
+function visibleOpportunities(){
+  const wantArchived=OPP_FILTER==="archived";
+  return (S.opportunities||[]).filter(o=>!!o.archived===wantArchived);
+}
+function clearOpportunitySelection(render=true){
+  OPP_SELECTED.clear();
+  if(render)renderRecent();
+}
+function selectionCount(){return OPP_SELECTED.size}
+function syncBulkControls(items=visibleOpportunities()){
+  const ids=new Set(items.map(o=>o.id));
+  for(const id of [...OPP_SELECTED])if(!ids.has(id))OPP_SELECTED.delete(id);
+  const n=selectionCount(),allSelected=items.length>0&&items.every(o=>OPP_SELECTED.has(o.id));
+  $("bulkBar").classList.toggle("hidden",n===0);
+  $("bulkCount").textContent=`${n} selected`;
+  $("selectVisibleBtn").textContent=allSelected?"Clear selection":"Select all";
+  $("bulkArchiveBtn").textContent=OPP_FILTER==="archived"?"Restore selected":"Archive selected";
+}
+function renderRecent(){
+  const all=S.opportunities||[];
+  $("recentSection").classList.toggle("hidden",!all.length);
+  $$(".opp-filter").forEach(b=>b.classList.toggle("active",b.dataset.filter===OPP_FILTER));
+  const wantArchived=OPP_FILTER==="archived";
+  const items=visibleOpportunities();
+  $("recentList").innerHTML=items.length?items.map(o=>{
+    const a=o.archived&&o.snapshot?o.snapshot:o.analysis;if(!a)return"";
+    const meta=effectiveMeta(o,a),tone=a.recommendation?.tone||"amber";
+    const facts=(a.meta?.facts||[]).slice(0,3).join(" · ");
+    const identity=`${meta.company||"Company not identified"} | ${meta.title||"Opportunity"}`;
+    const checked=OPP_SELECTED.has(o.id);
+    return `<div class="recent-item tone-${tone} ${checked?"selected":""}" data-id="${o.id}">
+      <input class="opp-select" type="checkbox" data-id="${o.id}" aria-label="Select ${esc(identity)}" ${checked?"checked":""}>
+      <button class="recent-open" data-id="${o.id}">
+        <div class="recent-copy">
+          <strong>${esc(identity)}</strong>
+          <span>${esc(facts)}</span>
+          <small>${o.archived?"Archived ":"Analyzed "}${esc(fmtDate(o.archivedAt||a.createdAt||o.createdAt))}</small>
+        </div>
+        <em>${esc(a.recommendation?.label||"")}</em>
+      </button>
+    </div>`;
+  }).join(""):`<div class="empty-library">${wantArchived?"Nothing archived yet.":"No active opportunities yet."}</div>`;
+
+  $$(".recent-open").forEach(b=>b.addEventListener("click",()=>openOpportunity(b.dataset.id)));
+  $$(".opp-select").forEach(cb=>cb.addEventListener("change",()=>{
+    const id=cb.dataset.id;
+    if(cb.checked)OPP_SELECTED.add(id);else OPP_SELECTED.delete(id);
+    renderRecent();
+  }));
+  syncBulkControls(items);
+}
+function openOpportunity(id){
+  const o=S.opportunities.find(x=>x.id===id);if(!o)return;
+  S.currentOpportunityId=o.id;save();
+  $("jdText").value=o.jd;$("jobUrl").value=o.url||"";
+  renderAnalysis(displayedAnalysis(o));
+  $("opportunityHome").classList.add("hidden");
+  $("analysisView").classList.remove("hidden");
+  window.scrollTo({top:0});
+}
+$$(".opp-filter").forEach(b=>b.addEventListener("click",()=>{
+  OPP_FILTER=b.dataset.filter;
+  OPP_SELECTED.clear();
+  renderRecent();
+}));
+$("selectVisibleBtn").addEventListener("click",()=>{
+  const items=visibleOpportunities();
+  const allSelected=items.length>0&&items.every(o=>OPP_SELECTED.has(o.id));
+  OPP_SELECTED.clear();
+  if(!allSelected)items.forEach(o=>OPP_SELECTED.add(o.id));
+  renderRecent();
+});
+$("clearSelectionBtn").addEventListener("click",()=>clearOpportunitySelection());
+$("bulkArchiveBtn").addEventListener("click",()=>{
+  const ids=new Set(OPP_SELECTED);
+  if(!ids.size)return;
+  const now=new Date().toISOString();
+  let changed=0;
+  for(const o of S.opportunities||[]){
+    if(!ids.has(o.id))continue;
+    if(OPP_FILTER==="archived"){
+      o.archived=false;o.updatedAt=now;changed++;
+    }else{
+      if(!o.snapshot&&o.analysis)o.snapshot=clone(o.analysis);
+      o.archived=true;o.archivedAt=now;o.updatedAt=now;changed++;
+    }
+  }
+  OPP_SELECTED.clear();
+  save();
+  renderRecent();
+  toast(OPP_FILTER==="archived"?`${changed} opportunit${changed===1?"y":"ies"} restored.`:`${changed} opportunit${changed===1?"y":"ies"} archived.`);
+});
+$("bulkDeleteBtn").addEventListener("click",()=>{
+  const ids=new Set(OPP_SELECTED);
+  const n=ids.size;if(!n)return;
+  const noun=n===1?"opportunity":"opportunities";
+  if(!confirm(`Delete ${n} ${noun}? This permanently removes the saved JD, analysis, and tailored output from Pursuit on this browser.`))return;
+  S.opportunities=(S.opportunities||[]).filter(o=>!ids.has(o.id));
+  if(ids.has(S.currentOpportunityId))S.currentOpportunityId=null;
+  OPP_SELECTED.clear();
+  save();
+  renderRecent();
+  toast(`${n} ${noun} deleted.`);
+});
+
+// ---------- profile ----------
+function renderProfile(){
+  const h=importHealth(),remembered=S.evidence.filter(e=>e.sourceType==="validation");
+  $("sourceResumeMeta").textContent=S.source?`${S.source.filename} · imported ${new Date(S.source.createdAt).toLocaleDateString()}`:"";
+  $("sourceHealth").innerHTML=(h.warnings||[]).length
+    ? `<span class="health-badge warning">Needs attention</span><span>${h.warnings.length} suspicious imported line${h.warnings.length===1?"":"s"} quarantined and excluded from matching.</span>`
+    : `<span class="health-badge healthy">Healthy import</span><span>No suspicious resume lines are influencing role matching.</span>`;
+  $("workAuth").value=S.profileFacts.workAuth||"";$("travel").value=S.profileFacts.travel||"";
+  $("profileStats").innerHTML=[
+    ["Roles",S.profile?.roles?.length||0],
+    ["Work evidence",S.evidence.filter(e=>e.evidenceType==="work"&&e.usable!==false).length],
+    ["Degrees",h.education||0],
+    ["Certifications",h.certifications||0]
+  ].map(([a,b])=>`<div class="profile-stat"><strong>${b}</strong><span>${a}</span></div>`).join("");
+  renderProfileStructure();
+  $("verifiedCount").textContent=`${remembered.length} verified addition${remembered.length===1?"":"s"}`;
+  renderEvidence();
+}
+function renderProfileStructure(){
+  const p=S.profile||{},roles=p.roles||[],edu=p.education||[],certs=p.certifications||[],caps=p.capabilityLines||[],early=p.early||[];
+  const block=(title,rows,cls="")=>rows.length?`<div class="structure-group ${cls}"><strong>${esc(title)}</strong>${rows.map(x=>`<div class="structure-row">${esc(x)}</div>`).join("")}</div>`:"";
+  const roleRows=roles.map(r=>[r.title,r.company,r.dates].filter(Boolean).join(" · "));
+
+  const workGroups=roles.map(r=>{
+    const bullets=(r.bullets||[]).map(x=>({text:x,type:"Evidence"}));
+    const impact=(r.impact||[]).map(x=>({text:x,type:"Impact"}));
+    const items=[...bullets,...impact];
+    if(!items.length)return"";
+    const heading=[r.title,r.company,r.dates].filter(Boolean).join(" · ");
+    return `<details class="evidence-role-group"><summary>${esc(heading)} <span>${items.length} item${items.length===1?"":"s"}</span></summary><div class="evidence-role-items">${items.map(x=>`<div class="structure-evidence-row"><span class="evidence-kind ${x.type==="Impact"?"impact":""}">${x.type}</span><p>${esc(x.text)}</p></div>`).join("")}</div></details>`;
+  }).join("");
+
+  const sourceEvidence=S.evidence.filter(e=>e.sourceType==="resume"&&e.usable!==false);
+  const excludedCats=new Set(["general","education","travel","sponsorship"]);
+  const signalCounts={};
+  for(const e of sourceEvidence){
+    if(!e.category||excludedCats.has(e.category))continue;
+    signalCounts[e.category]=(signalCounts[e.category]||0)+1;
+  }
+  const analysisSignals=Object.entries(signalCounts)
+    .map(([category,count])=>({label:E.TAXONOMY[category]?.label||category,count}))
+    .sort((a,b)=>b.count-a.count||a.label.localeCompare(b.label));
+
+  const raw=String(p.raw||"");
+  const literalSignals=[
+    ["Salesforce CRM",/\bsalesforce(?:\s+crm)?\b/i],
+    ["CRM",/\bcrm\b/i],
+    ["ERP",/\berp\b/i],
+    ["APIs",/\bapis?\b/i],
+    ["Cloud data platforms",/\bcloud\s+(?:data\s+)?platforms?\b/i],
+    ["Data science",/\bdata science\b/i],
+    ["AI / machine learning",/\b(?:artificial intelligence|machine learning|\bAI\b)\b/i],
+    ["Predictive analytics",/\bpredictive analytics\b/i],
+    ["Digital commerce / eCommerce",/\b(?:digital commerce|ecommerce|e-commerce)\b/i],
+    ["GA4",/\bGA4\b/i],
+    ["ServiceMax",/\bServiceMax\b/i],
+    ["Foundry",/\bFoundry\b/i],
+    ["MCP",/\bMCP\b/i],
+    ["AERA",/\bAERA\b/i],
+    ["CSR",/\bCSR\b/i],
+    ["TMIC",/\bTMIC\b/i],
+    ["CTR",/\bCTR\b/i]
+  ];
+  let technologies=literalSignals.filter(([,rx])=>rx.test(raw)).map(([label])=>label);
+  if(technologies.includes("Salesforce CRM"))technologies=technologies.filter(x=>x!=="CRM");
+
+  const domainSignals=[
+    ["Life sciences",/\blife sciences?\b/i],
+    ["Commercial",/\bcommercial\b/i],
+    ["Sales",/\bsales\b/i],
+    ["Marketing",/\bmarketing\b/i],
+    ["Customer Excellence",/\bcustomer excellence\b/i],
+    ["Customer Support",/\bcustomer support\b/i],
+    ["Business Development",/\bbusiness development\b/i],
+    ["Supply chain",/\bsupply[ -]chain\b/i],
+    ["Pricing",/\bpricing\b/i],
+    ["R&D / research",/\b(?:r&d|research and development|research)\b/i],
+    ["Scientific workflows",/\bscientific workflows?\b/i]
+  ].filter(([,rx])=>rx.test(raw)).map(([label])=>label);
+
+  const chipBlock=(title,items,help="")=>items.length?`<div class="structure-group"><strong>${esc(title)}</strong>${help?`<div class="structure-help">${esc(help)}</div>`:""}<div class="structure-chips">${items.map(x=>`<span>${esc(typeof x==="string"?x:x.label)}${typeof x==="object"&&x.count?` <em>${x.count}</em>`:""}</span>`).join("")}</div></div>`:"";
+  const summaryBlock=p.summary?block("Professional summary",[p.summary]):"";
+  const workBlock=workGroups?`<div class="structure-group"><strong>Work evidence</strong><div class="structure-help">These are the role bullets and impact statements Pursuit can use when matching you to a JD.</div><div class="work-evidence-groups">${workGroups}</div></div>`:"";
+  const capabilityBlock=block("Core capabilities",caps);
+  const technologyBlock=chipBlock("Technologies & platforms",technologies,"Literal technologies/platforms detected in the source resume.");
+  const domainBlock=chipBlock("Domains & functions",domainSignals,"Context Pursuit can use when deciding whether experience is direct or adjacent.");
+  const signalBlock=chipBlock("Matching skill signals",analysisSignals,"Normalized capability areas Pursuit assigned to resume evidence. The number shows how many source-evidence items support each signal.");
+  const scientificBlock=early.length?block("Scientific & early-career evidence",early):"";
+
+  $("profileStructure").innerHTML=
+    block("Work history",roleRows)+
+    summaryBlock+
+    workBlock+
+    capabilityBlock+
+    technologyBlock+
+    domainBlock+
+    signalBlock+
+    scientificBlock+
+    block("Education",edu)+
+    block("Certifications",certs)
+    ||`<div class="helper">No structured resume details available.</div>`;
+}
+function renderEvidence(){
+  const q=($("evidenceSearch").value||"").toLowerCase();
+  const ev=S.evidence.filter(e=>e.sourceType==="validation").filter(e=>!q||[e.capability,e.statement,e.company,e.role,e.period,e.rawValidation].join(" ").toLowerCase().includes(q));
+  $("evidenceList").innerHTML=ev.length?ev.map(e=>{
+    const status=e.negative?"Confirmed gap":"Verified";
+    const context=[e.company,e.role,e.period].filter(Boolean).join(" · ");
+    const original=e.rawValidation?`<div class="evidence-original"><span>You originally said</span><p>${esc(e.rawValidation)}</p></div>`:"";
+    return `<div class="verified-evidence-card ${e.negative?"negative":""}" data-id="${esc(e.id)}">
+      <div class="verified-evidence-head">
+        <div><strong>${esc(e.capability||E.TAXONOMY[e.category]?.label||"Verified evidence")}</strong>${context?`<small>${esc(context)}</small>`:""}</div>
+        <span class="source-badge ${e.negative?"negative":"remembered"}">${esc(status)}</span>
+      </div>
+      <div class="evidence-remember"><span>Pursuit will remember</span><p>${esc(e.statement)}</p></div>
+      ${original}
+      <div class="verified-actions"><button class="ghost compact-control edit-evidence" data-id="${esc(e.id)}">Edit</button><button class="textbtn compact-control remove-evidence" data-id="${esc(e.id)}">Remove</button></div>
+    </div>`;
+  }).join(""):`<div class="empty-verified"><strong>Nothing extra to manage yet.</strong><span>When you verify a gap during an application, it will appear here — separate from your resume.</span></div>`;
+  $$(".edit-evidence").forEach(b=>b.addEventListener("click",()=>openEvidenceEdit(b.dataset.id)));
+  $$(".remove-evidence").forEach(b=>b.addEventListener("click",()=>removeEvidence(b.dataset.id)));
+}
+function openEvidenceEdit(id){
+  const e=S.evidence.find(x=>x.id===id&&x.sourceType==="validation");if(!e)return;
+  EDIT_EVIDENCE_ID=id;
+  $("editEvidenceTitle").textContent=e.capability||"Edit what Pursuit remembers";
+  $("editEvidenceStatement").value=e.statement||"";
+  $("editEvidenceCompany").value=e.company||"";
+  $("editEvidenceRole").value=e.role||"";
+  $("editEvidencePeriod").value=e.period||"";
+  $("evidenceEditDialog").showModal();
+}
+function removeEvidence(id){
+  const e=S.evidence.find(x=>x.id===id&&x.sourceType==="validation");if(!e)return;
+  if(!confirm(`Remove this ${e.negative?"confirmed gap":"verified addition"} from Pursuit's profile? Future analyses will no longer use it.`))return;
+  S.evidence=S.evidence.filter(x=>x.id!==id);save();renderProfile();toast("Removed from your profile.");
+}
+$("saveEvidenceEditBtn").addEventListener("click",()=>{
+  const e=S.evidence.find(x=>x.id===EDIT_EVIDENCE_ID&&x.sourceType==="validation");if(!e)return;
+  const statement=$("editEvidenceStatement").value.trim();if(!statement){toast("Add the fact Pursuit should remember.");return}
+  e.statement=statement;e.company=$("editEvidenceCompany").value.trim();e.role=$("editEvidenceRole").value.trim();e.period=$("editEvidencePeriod").value.trim();
+  e.scope=e.scope||"Unspecified";e.updatedAt=new Date().toISOString();
+  save();$("evidenceEditDialog").close();EDIT_EVIDENCE_ID=null;renderProfile();toast("Verified addition updated.");
+});
+$("evidenceSearch").addEventListener("input",renderEvidence);
+$("savePractical").addEventListener("click",()=>{S.profileFacts.workAuth=$("workAuth").value;S.profileFacts.travel=$("travel").value;save();toast("Practical details saved.")});
+$("backupBtn").addEventListener("click",()=>downloadText(JSON.stringify(S,null,2),"pursuit-profile-backup.json","application/json"));
+$("restoreBackup").addEventListener("change",async()=>{const f=$("restoreBackup").files?.[0];if(!f)return;try{const x=JSON.parse(await f.text());if(!x.profile||!Array.isArray(x.evidence))throw new Error("Not a Pursuit profile backup.");S={...clone(DEFAULT),...x,version:"RC4.6"};save();renderProfile();toast("Profile restored.")}catch(e){toast(e.message)}});
+
+// ---------- shell ----------
+function renderShell(){
+  const r=ready();$("setupView").classList.toggle("hidden",r);$("topNav").classList.toggle("hidden",!r);
+  if(r){
+    $("profileLine").innerHTML=`Resume ready: <strong>${esc(S.source?.filename||"source")}</strong> · ${esc(healthSummary())} · ${S.evidence.filter(e=>e.sourceType==="validation").length} remembered addition${S.evidence.filter(e=>e.sourceType==="validation").length===1?"":"s"}.`;
+    if(!$("profileView").classList.contains("hidden"))renderProfile();
+    renderRecent();
+  }
+}
+renderShell();setView(ready()?"opportunities":"setup");

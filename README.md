@@ -1,51 +1,38 @@
-# Pursuit — Full Functional Test Build v2.0
+# Pursuit Release Candidate 4.4
 
-**Know your fit. Prove your value. Apply with purpose.**
+RC4.4 preserves the accepted decision model and opportunity archive from RC3, and hardens the resume-import and evidence-matching pipeline.
 
-This is the complete candidate-facing Day-1 test build. It intentionally removes the local-LLM/WebGPU dependency that made earlier builds feel like polished shells. The core application works immediately with a built-in deterministic evidence and role engine; no paid API, model download, database, or subscription is required.
+## RC4.4 integrity changes
+- Resume evidence is typed as work, capability, summary, education, certification, scientific background, or validated evidence.
+- Education/certification evidence cannot support work-experience capabilities such as Agile, CRM ownership, leadership, or delivery.
+- Two-column PDF credential extraction is reconstructed into separate education and certification records.
+- Suspicious credential rows are repaired where deterministic; otherwise they are quarantined and excluded from matching.
+- Wrapped professional and scientific bullets are reconstructed before evidence matching.
+- Core-capability lines are normalized into atomic capabilities instead of malformed wrapped fragments.
+- Phrase matching uses token/phrase boundaries, so `UAT` no longer matches inside `evaluate`, and `API` no longer matches inside `capabilities`.
+- Generic JDs no longer inherit CRM-specialist categories simply because broad words such as `commercial` appear.
+- A new Product performance & value realization driver handles commercial-performance, KPI, effectiveness, feedback, and performance-data requirements.
+- Work evidence is preferred over capability labels when displaying proof for a hiring driver.
+- Older Pursuit local data automatically rebuilds resume-derived evidence from the original saved resume while preserving remembered validations and opportunity history.
 
-## Candidate workflow
+## Release rule
+Do not merge to `main` until a quick real-role test confirms that each Top-5 driver has a coherent requirement and relevant evidence.
 
-1. Upload or paste the most complete truthful master resume.
-2. Pursuit parses employers, roles, dates, bullets, metrics and source evidence into a Master Profile and Verified Evidence Bank.
-3. Add a role by career-page URL or manual JD paste.
-4. Review and confirm the role metadata and full JD.
-5. Analyze the opportunity.
-6. Review Apply/Pass, ATS Readiness, recruiter/HM alignment ranges, top five distinct hiring drivers, knockout/logistics checks and evidence matches.
-7. Resolve only important gaps through the Evidence Gate.
-8. Save approved evidence to the Evidence Bank or Evidence Bank + Master Profile.
-9. Reanalysis happens immediately and validated evidence is reused for future JDs.
-10. Review a two-page role-aligned resume, edit bullets through truth guardrails, inspect evidence provenance and change log, and export Word/PDF.
 
-## What is deliberately different from v1.0
+## RC4.4 usability changes
+- Locked RC4.3 intelligence, scoring, import integrity, and opportunity-card design.
+- Reduced new-opportunity vertical space so Analyze role is visible on a normal laptop viewport.
+- Added checkboxes to opportunity cards.
+- Added Select all / Clear selection.
+- Added bulk Archive for Active opportunities and bulk Restore for Archived opportunities.
+- Added permanent bulk Delete with confirmation.
 
-- No local Llama model or semantic-model download is required for normal use.
-- Analysis happens immediately.
-- The top-five engine separates role-selection criteria from logistics/education knockout checks.
-- Domain boundary rules are explicit: API != EHR/EMR; life sciences != exact medical-device/digital-health experience; matrix leadership != direct reports; value/revenue != budget ownership.
-- Resume generation selects verified source evidence and keeps every bullet inside the correct employer/role boundary.
-- User corrections recalculate the analysis immediately.
-- Gap validation persists and is reused.
 
-## Privacy
-
-Career data is stored in browser `localStorage` for this personal test build. Do not commit resumes, JDs, generated applications, or exported backups to the public repository. The repository contains application code and synthetic/regression test descriptions only.
-
-Career-page import may call the employer's public page and, when blocked, `r.jina.ai` as a fallback. Manual paste remains a first-class option.
-
-## Branch workflow
-
-```text
-dev  -> candidate testing and fixes
-main -> approved live version only
-```
-
-## Test
-
-The pure application engine can be checked with Node:
-
-```bash
-node tests/test_core.js
-```
-
-The real acceptance test remains candidate use: master resume -> real JD -> analysis -> gap validation -> regenerated resume -> Word/PDF.
+## RC4.6 presentation/profile polish
+- Opportunity workflow, intelligence, scoring, import logic, and opportunity library are locked from RC4.4.
+- Analyze action is more visually prominent and remains above the fold on a normal laptop viewport.
+- Main recommendation text is colored green / amber / red to match the decision.
+- My Profile now separates the read-only resume foundation from user-verified additions.
+- Resume foundation explains what the source resume is and shows the extracted work/education/certification structure.
+- Verified additions can be searched, edited, or removed.
+- Brain emoji/icon language was removed from the profile and remembered-evidence cues.

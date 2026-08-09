@@ -1,9 +1,11 @@
 .DS_Store
+Thumbs.db
+.vscode/
+.idea/
 private/
 resumes/
 applications/
-evidence-backups/
+backups/
 *.pdf
 *.docx
 *.json
-!tests/*.json
