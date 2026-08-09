@@ -1,7 +1,7 @@
 const E=window.PursuitEngine;
 const $=id=>document.getElementById(id), $$=(q,r=document)=>[...r.querySelectorAll(q)];
 const KEY="pursuit_release_candidate_1";
-const DEFAULT={version:"RC4.6",source:null,profile:null,evidence:[],profileFacts:{workAuth:"",travel:""},opportunities:[],currentOpportunityId:null};
+const DEFAULT={version:"S2-GENERALIZED-RC2.2-DEV-FINAL",source:null,profile:null,evidence:[],profileFacts:{workAuth:"",travel:"",productYears:"",gates:{}},ai:{endpoint:"",accessToken:""},opportunities:[],currentOpportunityId:null};
 let S=loadState(),ACTIVE_GAP=null,PENDING=null,OPP_FILTER="active",OPP_SELECTED=new Set(),EDIT_EVIDENCE_ID=null;
 
 function clone(x){return JSON.parse(JSON.stringify(x))}
@@ -31,7 +31,7 @@ function migrateOld(){
         answers:e.answers||{},company:e.company||"",role:e.role||"",period:e.period||"",scope:e.scope||"",
         authority:e.authority||"",metric:!!e.metric,direct:e.direct===true,sourceType:"validation",sourceLabel:"Remembered from earlier Pursuit build",createdAt:e.createdAt||new Date().toISOString()
       })).filter(e=>e.statement);
-      return {version:"RC4.6",source:{filename:old.source.filename||"Resume",text:old.source.text,createdAt:old.source.createdAt||new Date().toISOString()},profile,evidence:[...base,...validated],profileFacts:{workAuth:old.profileFacts?.workAuthorization||"",travel:old.profileFacts?.travelReady||""},opportunities:[],currentOpportunityId:null};
+      return {version:"S2-GENERALIZED-RC2.2-DEV-FINAL",source:{filename:old.source.filename||"Resume",text:old.source.text,createdAt:old.source.createdAt||new Date().toISOString()},profile,evidence:[...base,...validated],profileFacts:{workAuth:old.profileFacts?.workAuthorization||"",travel:old.profileFacts?.travelReady||""},opportunities:[],currentOpportunityId:null};
     }catch{}
   }
   return clone(DEFAULT);
@@ -42,13 +42,15 @@ function loadState(){
     const state=raw?{...clone(DEFAULT),...JSON.parse(raw)}:migrateOld();
     const oldVersion=state.version||"";
     state.opportunities=(state.opportunities||[]).map(o=>({...o,archived:o.archived===true,archivedAt:o.archivedAt||null,snapshot:o.snapshot||null}));
+    state.profileFacts={workAuth:"",travel:"",productYears:"",gates:{},...(state.profileFacts||{})};state.profileFacts.gates={...(state.profileFacts.gates||{})};
     // RC4.4 rebuilds resume-derived evidence from the original source so older misclassified imports cannot survive an upgrade.
-    if(state.source?.text&&(oldVersion!=="RC4.6"||(state.evidence||[]).some(e=>e.sourceType==="resume"&&!e.evidenceType))){
+    if(state.source?.text&&(oldVersion!=="S2-GENERALIZED-RC2.2-DEV-FINAL"||(state.evidence||[]).some(e=>e.sourceType==="resume"&&!e.evidenceType))){
       const remembered=(state.evidence||[]).filter(e=>e.sourceType==="validation").map(e=>({...e,evidenceType:"validation",usable:e.usable!==false}));
       const profile=E.parseResume(state.source.text);
       state.profile=profile;state.evidence=[...E.evidenceFromProfile(profile,state.source.filename||"Resume"),...remembered];
     }
-    state.version="RC4.6";
+    state.ai={endpoint:"",accessToken:"",...(state.ai||{})};
+    state.version="S2-GENERALIZED-RC2.2-DEV-FINAL";
     return state;
   }catch{return clone(DEFAULT)}
 }
@@ -117,6 +119,93 @@ $("resumeFile").addEventListener("change",()=>{const f=$("resumeFile").files?.[0
 $("savePastedResume").addEventListener("click",()=>{try{installResume($("resumePaste").value,"Pasted resume")}catch(e){$("resumeStatus").textContent=e.message}});
 $("replaceResumeFile").addEventListener("change",async()=>{const f=$("replaceResumeFile").files?.[0];if(!f)return;if(!confirm("Replace your source resume? Previously validated evidence will be preserved."))return;try{const t=await readResumeFile(f);installResume(t,f.name);setView("profile")}catch(e){toast(e.message)}});
 
+
+
+const ANALYSIS_ENGINE_VERSION="S2-GENERALIZED-RC2.2-DEV-FINAL";
+function stableHash(text=""){
+  let h=2166136261;for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,16777619)}
+  return (h>>>0).toString(36);
+}
+function analysisInputSignature(jd){
+  const ev=candidatePayload().map(e=>({id:e.id,evidenceType:e.evidenceType,category:e.category,statement:e.statement,company:e.company,role:e.role,period:e.period,direct:e.direct,negative:e.negative}))
+    .sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+  return stableHash(JSON.stringify({engine:ANALYSIS_ENGINE_VERSION,jd:String(jd||"").replace(/\s+/g," ").trim(),profileFacts:S.profileFacts||{},evidence:ev}));
+}
+function cachedAnalysis(signature){
+  const hit=(S.opportunities||[]).find(o=>o.analysis?.engineVersion===ANALYSIS_ENGINE_VERSION&&o.analysis?.inputSignature===signature);
+  return hit?clone(hit.analysis):null;
+}
+
+// ---------- secure AI reasoning service ----------
+function aiReady(){return !!(S.ai?.endpoint&&S.ai?.accessToken)}
+function normalizeEndpoint(x){return String(x||"").trim().replace(/\/+$/,"")}
+function openAiSetup(){
+  $("aiEndpoint").value=S.ai?.endpoint||"";
+  $("aiAccessToken").value=S.ai?.accessToken||"";
+  $("aiSetupDialog").showModal();
+}
+$("saveAiSetupBtn").addEventListener("click",async()=>{
+  const endpoint=normalizeEndpoint($("aiEndpoint").value),accessToken=$("aiAccessToken").value.trim();
+  if(!/^https:\/\//i.test(endpoint)||!accessToken){toast("Add the secure service URL and private access code.");return}
+  const btn=$("saveAiSetupBtn"),prior=btn.textContent;btn.disabled=true;btn.textContent="Checking…";
+  try{
+    const r=await fetch(endpoint+"/health",{headers:{"X-Pursuit-Key":accessToken}});
+    if(!r.ok)throw new Error("Connection failed");
+    const data=await r.json();
+    if(!data.ok)throw new Error("Connection failed");
+    S.ai={endpoint,accessToken};save();$("aiSetupDialog").close();toast(`Connected — ${data.model||"reasoning model"} ready.`);
+  }catch(e){toast("Could not connect. Check the Worker URL and access code.")}
+  finally{btn.disabled=false;btn.textContent=prior}
+});
+function candidatePayload(){
+  return (S.evidence||[]).filter(e=>e.usable!==false).map(e=>({
+    id:e.id,evidenceType:e.evidenceType||"",category:e.category||"",statement:e.statement||"",
+    company:e.company||"",role:e.role||"",period:e.period||"",scope:e.scope||"",authority:e.authority||"",
+    sourceType:e.sourceType||"",negative:e.negative===true,direct:e.direct===true
+  }));
+}
+async function serviceCall(path,payload){
+  if(!aiReady()){openAiSetup();throw new Error("AI_SETUP_REQUIRED")}
+  const r=await fetch(normalizeEndpoint(S.ai.endpoint)+path,{
+    method:"POST",
+    headers:{"Content-Type":"application/json","X-Pursuit-Key":S.ai.accessToken},
+    body:JSON.stringify(payload)
+  });
+  if(!r.ok){
+    let msg="Pursuit intelligence service failed.";
+    try{const x=await r.json();if(x?.error)msg=x.error}catch{}
+    throw new Error(msg);
+  }
+  return await r.json();
+}
+async function semanticAnalysis(jd,url=""){
+  const deterministicFacts=E.deterministicProfileFacts(S.profile,S.evidence),signature=analysisInputSignature(jd),cached=cachedAnalysis(signature);
+  if(cached){cached.cacheHit=true;return cached}
+  const modelData=await serviceCall("/analyze",{jd,url,candidate:{profileFacts:S.profileFacts||{},deterministicFacts,evidence:candidatePayload()}});
+  const analysis=E.fromSemanticModel(jd,S.profile,S.evidence,S.profileFacts,url,modelData,deterministicFacts);
+  analysis.inputSignature=signature;analysis.engineVersion=ANALYSIS_ENGINE_VERSION;analysis.cacheHit=false;
+  return analysis;
+}
+
+
+function publicText(text=""){
+  return String(text||"")
+    .replace(/\[(?:e|ev|evidence)[-_a-z0-9]+\]/gi,"")
+    .replace(/\b(?:e|ev|evidence)[-_][a-z0-9]{6,}\b/gi,"")
+    .replace(/\s+([,.;:!?])/g,"$1")
+    .replace(/\s{2,}/g," ")
+    .trim();
+}
+function compactReason(text="",max=360){
+  const cleaned=publicText(text);
+  const sentences=cleaned.split(/(?<=[.!?])\s+/).filter(Boolean);
+  let out=sentences.slice(0,2).join(" ");
+  if(out.length>max){
+    out=out.slice(0,max).replace(/\s+\S*$/,"").trim()+"…";
+  }
+  return out;
+}
+
 // ---------- job intake ----------
 $("importJobBtn").addEventListener("click",async()=>{
   const url=$("jobUrl").value.trim();if(!/^https?:\/\//i.test(url)){toast("Paste a complete career-page URL.");return}
@@ -135,12 +224,13 @@ function htmlToText(html){
   const d=new DOMParser().parseFromString(html,"text/html");d.querySelectorAll("script,style,nav,footer,header,aside,svg,form").forEach(n=>n.remove());return(d.body?.innerText||"").replace(/\n{3,}/g,"\n\n").trim()
 }
 $("analyzeBtn").addEventListener("click",()=>runAnalysis(true));
-function runAnalysis(newOpportunity=false){
+async function runAnalysis(newOpportunity=false){
   const jd=$("jdText").value.trim(),url=$("jobUrl").value.trim(),btn=$("analyzeBtn");
   if(jd.length<500){toast("Add a more complete job description first.");return}
-  btn.disabled=true;btn.textContent="Reading between the JD lines…";
+  if(!aiReady()){openAiSetup();return}
+  btn.disabled=true;btn.textContent="Reading the role like a hiring team…";
   try{
-    const analysis=E.analyze(jd,S.profile,S.evidence,S.profileFacts,url);
+    const analysis=await semanticAnalysis(jd,url);
     let opp=currentOpp();
     if(newOpportunity||!opp){
       opp={id:"j_"+Date.now().toString(36),jd,url,analysis,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),archived:false,archivedAt:null,snapshot:null};
@@ -151,9 +241,11 @@ function runAnalysis(newOpportunity=false){
     }
     save();renderAnalysis(analysis);$("opportunityHome").classList.add("hidden");$("analysisView").classList.remove("hidden");window.scrollTo({top:0,behavior:"smooth"});
   }catch(err){
-    console.error("Pursuit analysis failed",err);
-    toast("Pursuit hit an analysis error. Nothing was changed.");
-    $("importStatus").textContent="Analysis stopped because of an app error. Nothing was saved.";
+    if(err.message!=="AI_SETUP_REQUIRED"){
+      console.error("Pursuit analysis failed",err);
+      toast(err.message||"Pursuit hit an intelligence-service error. Nothing was changed.");
+      $("importStatus").textContent="Analysis stopped. No score was created or saved.";
+    }
   }finally{
     btn.disabled=false;btn.textContent="Analyze this role →";
   }
@@ -177,7 +269,12 @@ function renderAnalysis(a){
   $("atsExplanation").textContent=atsExplanation(a);$("recruiterExplanation").textContent=ra.reason;$("managerExplanation").textContent=ma.reason;$("confidenceExplanation").textContent=cf.reason;
   setLevel($("recruiterBox"),ra.label);setLevel($("managerBox"),ma.label);setLevel($("confidenceBox"),cf.label);
   $("primaryRisk").textContent=a.primaryRisk;$("hiringProblem").textContent=a.hiringProblem;
-  const changes=a.whatWouldChange||[];$("decisionChange").classList.toggle("hidden",!changes.length);$("decisionChangeList").innerHTML=changes.map(x=>`<div class="decision-change-row"><span>${esc(x.label)}</span><em>${x.changesDecision?"Could change the recommendation":"Could strengthen the case"}</em></div>`).join("");
+  const changes=(a.whatWouldChange||[]).slice(0,4);
+  $("decisionChange").classList.toggle("hidden",!changes.length);
+  $("decisionChangeList").innerHTML=changes.map(x=>`<div class="decision-change-row"><span>${esc(x.label)}</span><em>${x.kind==="gate"?"Mandatory gate — confirm once":(x.changesDecision?"Could change the recommendation":"Could strengthen the case")}</em></div>`).join("");
+  const limits=(a.knownLimitations||[]).slice(0,4);
+  $("knownLimitations").classList.toggle("hidden",!limits.length);
+  $("knownLimitationsList").innerHTML=limits.map(x=>`<div class="decision-change-row"><span>${esc(x.label)}</span><em>${esc(x.status||"Known limitation")}</em></div>`).join("");
   $("topFive").innerHTML=a.criteria.map((c,i)=>criterionHTML(c,a.matches[i],i)).join("");
   const checks=a.gates.filter(g=>g.status!=="clear");$("quickChecksCard").classList.toggle("hidden",!checks.length);$("quickChecks").innerHTML=checks.map(g=>checkHTML(g,archived)).join("");if(!archived)bindChecks();
   const gaps=(a.clarifications||[]).map(x=>({criterion:a.criteria[x.index],match:a.matches[x.index],index:x.index,changesDecision:x.changesDecision}));
@@ -258,64 +355,95 @@ $("archiveOppBtn").addEventListener("click",()=>{
   else{o.snapshot=clone(o.analysis);o.archived=true;o.archivedAt=new Date().toISOString();o.updatedAt=o.archivedAt;toast("Archived. This analysis is now a frozen snapshot.")}
   save();renderAnalysis(displayedAnalysis(o));
 });
-$("reanalyzeOppBtn").addEventListener("click",()=>{
+$("reanalyzeOppBtn").addEventListener("click",async()=>{
   const old=currentOpp();if(!old||!old.archived)return;
+  if(!aiReady()){openAiSetup();return}
   const btn=$("reanalyzeOppBtn"),prior=btn.textContent;btn.disabled=true;btn.textContent="Reanalyzing…";
   try{
-    const analysis=E.analyze(old.jd,S.profile,S.evidence,S.profileFacts,old.url||"");
+    const analysis=await semanticAnalysis(old.jd,old.url||"");
     const fresh={id:"j_"+Date.now().toString(36),jd:old.jd,url:old.url||"",analysis,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),archived:false,archivedAt:null,snapshot:null,reanalyzedFrom:old.id,metaOverride:old.metaOverride?clone(old.metaOverride):null};
     S.opportunities.unshift(fresh);S.opportunities=S.opportunities.slice(0,100);S.currentOpportunityId=fresh.id;save();
-    $("jdText").value=fresh.jd;$("jobUrl").value=fresh.url;renderAnalysis(analysis);toast("Reanalyzed with your current profile. The archived version stayed unchanged.");window.scrollTo({top:0,behavior:"smooth"});
+    $("jdText").value=fresh.jd;$("jobUrl").value=fresh.url;renderAnalysis(analysis);toast("Reanalyzed with the reasoning model. The archived version stayed unchanged.");window.scrollTo({top:0,behavior:"smooth"});
   }catch(err){
-    console.error("Pursuit reanalysis failed",err);toast("Reanalysis hit an app error. The archived snapshot is unchanged.");
+    console.error("Pursuit reanalysis failed",err);toast(err.message||"Reanalysis failed. The archived snapshot is unchanged.");
   }finally{btn.disabled=false;btn.textContent=prior}
 });
 function setLevel(el,label){el.classList.remove("level-excellent","level-strong","level-limited","level-weak","level-high","level-medium","level-low");if(el)el.classList.add(`level-${String(label||"").toLowerCase().replace(/\s+/g,"-")}`)}
 function atsExplanation(a){const weak=a.criteria.map((c,i)=>({c,m:a.matches[i]})).filter(x=>x.m.status!=="Strong");return weak.length?`${weak.length} of the five decision drivers are not yet explicit/direct in the resume.`:"The five decision drivers are explicitly supported in the resume."}
 function criterionHTML(c,m,i){
-  const evidence=m.best?.statement||"No defensible evidence found.";
+  const evidence=(m.supportingEvidence||[]).slice(0,3);
   const remembered=m.remembered?`<span class="remembered-note">✓ Verified earlier</span>`:"";
   const tier=c.tier===1?"HIRING GATE":"MAJOR DIFFERENTIATOR";
-  return `<div class="criterion"><div class="rank">${i+1}</div><div><div class="criterion-title">${esc(c.label)}</div><div class="criterion-req"><b>${tier}</b> · ${esc(c.requirement)}</div><div class="criterion-why">${esc(c.why||"")}</div></div><div class="evidence-copy"><strong>Your evidence:</strong> ${esc(evidence)}<br>${esc(m.reason)}${remembered}</div><span class="fit ${m.status.toLowerCase()}">${esc(m.status)}</span></div>`;
+  const evidenceHTML=evidence.length?`<div class="evidence-list">${evidence.map(e=>{
+    const src=[e.company,e.role].filter(Boolean).join(" · ");
+    return `<div class="evidence-item"><p>${esc(e.text)}</p>${src?`<small>${esc(src)}</small>`:""}</div>`;
+  }).join("")}</div>`:`<div class="evidence-empty">No defensible work evidence found.</div>`;
+  return `<div class="criterion"><div class="rank">${i+1}</div><div><div class="criterion-title">${esc(c.label)}</div><div class="criterion-req"><b>${tier}</b> · ${esc(c.requirement)}</div><div class="criterion-why">${esc(c.why||"")}</div></div><div class="evidence-copy"><strong>Best evidence</strong>${evidenceHTML}<div class="evidence-judgment">${esc(compactReason(m.reason))}${remembered}</div></div><span class="fit ${m.status.toLowerCase()}">${esc(m.status)}</span></div>`;
 }
 function gapHTML(g,archived=false){
   const confirmed=g.match.confirmedGap===true,label=g.changesDecision?"COULD CHANGE THE DECISION":"WORTH CLARIFYING";
-  return `<div class="gap-item"><div><span class="gap-type">${esc(label)}</span><h3>${esc(g.criterion.label)}</h3><p>${esc(g.match.reason)}</p></div>${archived?`<span class="archive-inline">Archived snapshot</span>`:confirmed?`<span class="fit gap">🚧 Honest gap saved</span>`:`<button class="secondary validate-gap" data-index="${g.index}">Check this</button>`}</div>`;
+  const mq=g.criterion.clarification||{},title=mq.dimensionLabel||g.criterion.label,why=mq.question||g.match.reason;
+  return `<div class="gap-item"><div><span class="gap-type">${esc(label)}</span><h3>${esc(title)}</h3><p>${esc(why)}</p></div>${archived?`<span class="archive-inline">Archived snapshot</span>`:confirmed?`<span class="fit gap">🚧 Honest gap saved</span>`:`<button class="secondary validate-gap" data-index="${g.index}">Check this</button>`}</div>`;
 }
 function checkHTML(g,archived=false){
-  let controls="";
-  if(g.category==="sponsorship")controls=`<button class="ghost check-set" data-kind="workAuth" data-value="authorized">I am authorized</button><button class="ghost check-set" data-kind="workAuth" data-value="sponsorship">I need sponsorship</button>`;
-  else if(g.category==="travel")controls=`<button class="ghost check-set" data-kind="travel" data-value="yes">I can travel</button><button class="ghost check-set" data-kind="travel" data-value="no">I cannot</button>`;
+  let controls="";const key=esc(g.factKey||g.id||"gate");
+  if(g.gateType==="work_authorization"||g.category==="sponsorship")controls=`<button class="ghost check-set" data-kind="workAuth" data-value="authorized">I am authorized</button><button class="ghost check-set" data-kind="workAuth" data-value="sponsorship">I need sponsorship</button>`;
+  else if(g.gateType==="travel"||g.category==="travel")controls=`<button class="ghost check-set" data-kind="travel" data-value="yes">I can meet this</button><button class="ghost check-set" data-kind="travel" data-value="no">I cannot</button>`;
+  else if(g.gateType==="experience_duration"||g.category==="experience_duration"||g.category==="product_tenure"){
+    const y=g.requiredYears||"";
+    controls=y?`<button class="ghost check-set" data-gate-key="${key}" data-value="meets:${y}">Yes — I meet ${y}+ years</button><button class="ghost check-set" data-gate-key="${key}" data-value="under:${y}">No — under ${y} years</button>`:`<button class="ghost check-set" data-gate-key="${key}" data-value="yes">I meet this</button><button class="ghost check-set" data-gate-key="${key}" data-value="no">I do not</button>`;
+  }else controls=`<button class="ghost check-set" data-gate-key="${key}" data-value="yes">I meet this</button><button class="ghost check-set" data-gate-key="${key}" data-value="no">I do not</button>`;
   return `<div class="check-item"><div><h3>${esc(g.label)}</h3><p>${esc(g.reason)}</p></div><div class="button-row">${archived?`<span class="archive-inline">Archived snapshot</span>`:controls}</div></div>`;
 }
 function bindChecks(){
-  $$(".check-set").forEach(b=>b.addEventListener("click",()=>{S.profileFacts[b.dataset.kind]=b.dataset.value;save();runAnalysis(false)}));
+  $$(".check-set").forEach(b=>b.addEventListener("click",()=>{
+    if(b.dataset.gateKey){S.profileFacts.gates=S.profileFacts.gates||{};S.profileFacts.gates[b.dataset.gateKey]=b.dataset.value}
+    else S.profileFacts[b.dataset.kind]=b.dataset.value;
+    save();runAnalysis(false);
+  }));
 }
 
 // ---------- gap validation ----------
 function openGap(index){
   const opp=currentOpp();if(!opp)return;const c=opp.analysis.criteria[index],m=opp.analysis.matches[index];ACTIVE_GAP={index,criterion:c,match:m};PENDING=null;
-  $("gapTitle").textContent=c.label;$("gapContext").textContent=m.reason;$("gapFreeText").value="";$("gapRolePeriod").value="";
+  const mq=c.clarification||{};
+  $("gapTitle").textContent=mq.dimensionLabel||c.label;$("gapContext").textContent=mq.question||m.reason;$("gapFreeText").value="";$("gapRolePeriod").value="";
   $("wordingPreview").classList.add("hidden");$("acceptEvidenceBtn").classList.add("hidden");$("suggestWordingBtn").classList.remove("hidden");
-  const qs=E.validationQuestions(c.category);
+  const qs=(mq?.needed&&mq.question)?[{id:"model",label:mq.question,options:(mq.options||[]).length?mq.options:["Yes","Partially","No"],multi:mq.multiSelect===true}]:E.validationQuestions(c.category);
   $("gapQuestions").innerHTML=qs.map(q=>`<div class="question" data-q="${q.id}" data-multi="${q.multi?"1":"0"}"><label>${esc(q.label)}</label><div class="chips">${q.options.map(o=>`<button type="button" class="chip" data-value="${esc(o)}">${esc(o)}</button>`).join("")}</div></div>`).join("");
   $$("#gapQuestions .chip").forEach(ch=>ch.addEventListener("click",()=>{const q=ch.closest(".question");if(q.dataset.multi!=="1")q.querySelectorAll(".chip").forEach(x=>x.classList.remove("selected"));if(/^None$/i.test(ch.dataset.value)){q.querySelectorAll(".chip").forEach(x=>x.classList.remove("selected"));ch.classList.add("selected")}else{q.querySelectorAll(".chip").forEach(x=>{if(/^None$/i.test(x.dataset.value))x.classList.remove("selected")});ch.classList.toggle("selected") }}));
   $("gapDialog").showModal();
 }
 function gapAnswers(){const a={};$$("#gapQuestions .question").forEach(q=>a[q.dataset.q]=[...q.querySelectorAll(".chip.selected")].map(x=>x.dataset.value));return a}
-$("suggestWordingBtn").addEventListener("click",()=>{
-  if(!ACTIVE_GAP)return;const answers=gapAnswers(),flat=Object.values(answers).flat(),free=$("gapFreeText").value.trim();
+$("suggestWordingBtn").addEventListener("click",async()=>{
+  if(!ACTIVE_GAP)return;
+  const answers=gapAnswers(),flat=Object.values(answers).flat(),free=$("gapFreeText").value.trim();
   if(!flat.length&&!free){toast("Choose the closest answer or add one short sentence.");return}
-  if(flat.length&&flat.every(x=>/^None$|^No$/i.test(x))&&!free){const wording=E.negativeWording(ACTIVE_GAP.criterion.category,answers);PENDING={answers,free:"",wording,rolePeriod:$("gapRolePeriod").value.trim(),negative:true};$("wordingText").textContent=wording;$("wordingScope").textContent="Good. We will remember the honest gap and stop asking about it unless a future role changes the scope.";$("wordingPreview").classList.remove("hidden");$("acceptEvidenceBtn").classList.remove("hidden");$("acceptEvidenceBtn").textContent="Remember this gap";$("suggestWordingBtn").classList.add("hidden");return}
-  const wording=E.polishedEvidence(ACTIVE_GAP.criterion.category,answers,free);
-  PENDING={answers,free,wording,rolePeriod:$("gapRolePeriod").value.trim(),negative:false};$("acceptEvidenceBtn").textContent="Accept & remember";
-  $("wordingText").textContent=wording;$("wordingScope").textContent="This wording is intentionally limited to the scope you just validated.";
-  $("wordingPreview").classList.remove("hidden");$("acceptEvidenceBtn").classList.remove("hidden");$("suggestWordingBtn").classList.add("hidden");
+  const obviousNegative=flat.length&&flat.every(x=>/^None(?: of these)?$|^No$/i.test(x))&&!free;
+  if(obviousNegative){
+    const wording=`Confirmed: no direct evidence currently establishes ${ACTIVE_GAP.criterion.label}.`;
+    PENDING={answers,free:"",wording,rolePeriod:$("gapRolePeriod").value.trim(),negative:true,direct:false};
+    $("wordingText").textContent=wording;$("wordingScope").textContent="Good. We will remember the honest gap and stop asking about it unless a future role changes the scope.";
+    $("wordingPreview").classList.remove("hidden");$("acceptEvidenceBtn").classList.remove("hidden");$("acceptEvidenceBtn").textContent="Remember this gap";$("suggestWordingBtn").classList.add("hidden");return;
+  }
+  if(!aiReady()){openAiSetup();return}
+  const btn=$("suggestWordingBtn"),prior=btn.textContent;btn.disabled=true;btn.textContent="Turning that into evidence…";
+  try{
+    const x=await serviceCall("/polish-evidence",{
+      criterion:{label:ACTIVE_GAP.criterion.clarification?.dimensionLabel||ACTIVE_GAP.criterion.label,requirement:ACTIVE_GAP.criterion.clarification?.question||ACTIVE_GAP.criterion.requirement,why:ACTIVE_GAP.criterion.why||"",memoryKey:ACTIVE_GAP.criterion.clarification?.factKey||ACTIVE_GAP.criterion.factKey||ACTIVE_GAP.criterion.category},
+      answers,freeText:free,rolePeriod:$("gapRolePeriod").value.trim()
+    });
+    PENDING={answers,free,wording:x.wording,rolePeriod:$("gapRolePeriod").value.trim(),negative:x.negative===true,direct:x.direct===true};
+    $("acceptEvidenceBtn").textContent=PENDING.negative?"Remember this gap":"Accept & remember";
+    $("wordingText").textContent=x.wording;$("wordingScope").textContent=x.scopeNote||"This wording is intentionally limited to the scope you just validated.";
+    $("wordingPreview").classList.remove("hidden");$("acceptEvidenceBtn").classList.remove("hidden");btn.classList.add("hidden");
+  }catch(err){toast(err.message||"Could not improve the evidence wording.")}
+  finally{btn.disabled=false;btn.textContent=prior}
 });
 $("acceptEvidenceBtn").addEventListener("click",()=>{
   if(!PENDING||!ACTIVE_GAP)return;
   const rec=E.evidenceRecordFromValidation(ACTIVE_GAP.criterion.category,ACTIVE_GAP.criterion,PENDING.answers,PENDING.free,PENDING.rolePeriod,PENDING.wording,PENDING.negative===true);
-  S.evidence.push(rec);save();$("gapDialog").close();toast(PENDING.negative?"Honest gap remembered. No need to answer that again.":"Saved to your profile. Pursuit will reuse this next time.");runAnalysis(false);
+  if(PENDING.direct!==undefined)rec.direct=PENDING.direct===true;S.evidence.push(rec);save();$("gapDialog").close();toast(PENDING.negative?"Honest gap remembered. No need to answer that again.":"Saved to your profile. Pursuit will reuse this next time.");runAnalysis(false);
 });
 $("leaveGapBtn").addEventListener("click",()=>$("gapDialog").close());
 $$("[data-close]").forEach(b=>b.addEventListener("click",()=>$(b.dataset.close).close()));
@@ -327,13 +455,12 @@ function renderOutput(a){
   sections.push(outputSection("Capabilities worth emphasizing",out.capabilities.join(" • ")));
   for(const r of out.roleSections){
     let body=`${r.title}\n${r.companyLine}\n\n${r.bullets.map(x=>"• "+x).join("\n")}`;
-    if(r.impactKeep.length)body+=`\n\nSELECTED IMPACT - KEEP / PRIORITIZE\n${r.impactKeep.map(x=>"• "+x).join("\n")}`;
-    if(r.impactDeprioritize.length)body+=`\n\nDEPRIORITIZE FOR THIS ROLE\n${r.impactDeprioritize.map(x=>"• "+x).join("\n")}`;
+    if((r.impactSelected||[]).length)body+=`\n\nSELECTED IMPACT\n${r.impactSelected.map(x=>"• "+x).join("\n")}`;
     sections.push(outputSection(r.companyLine.split("|")[0]||r.title,body));
   }
   if(out.additions.length){
     const body=out.additions.map(x=>`• ${x.statement}${x.company?` [${x.company}${x.role?" | "+x.role:""}]`:""}`).join("\n");
-    sections.push(outputSection("Validated additions worth using",body));
+    sections.push(outputSection("Validated evidence to place manually",body));
   }
   $("tailoredOutput").innerHTML=sections.join("");
   $$(".copy-section").forEach(b=>b.addEventListener("click",()=>copyText(b.closest(".output-section").querySelector(".output-body").innerText)));
@@ -342,8 +469,10 @@ function outputSection(title,body){return `<div class="output-section"><div clas
 $("copyAllBtn").addEventListener("click",()=>{const a=displayedAnalysis();if(a)copyText(a.fullText)});
 async function copyText(t){try{await navigator.clipboard.writeText(t);toast("Copied.")}catch{const ta=document.createElement("textarea");ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();toast("Copied.")}}
 function renderNotAdded(a){
-  const rows=a.criteria.map((c,i)=>({c,m:a.matches[i]})).filter(x=>["Gap","Adjacent"].includes(x.m.status)||x.m.gapType==="Resume gap");
-  $("notAddedList").innerHTML=rows.length?`<div class="not-added">${rows.map(x=>`<div class="not-added-row"><strong>${esc(x.c.label)}</strong><span>${esc(x.m.status==="Gap"?"Not added because no verified evidence supports this requirement.":x.m.reason)}</span></div>`).join("")}</div>`:`<div class="helper">No unsupported top-five claim was needed for this application.</div>`;
+  const rows=(a.protectedClaims||[]).filter(x=>x?.claim&&x?.reason);
+  $("notAddedCard").classList.toggle("hidden",!rows.length);
+  if(!rows.length){$("notAddedList").innerHTML="";return}
+  $("notAddedList").innerHTML=`<div class="not-added">${rows.map(x=>`<div class="not-added-row"><strong>${esc(x.claim)}</strong><span>${esc(compactReason(x.reason,300))}</span></div>`).join("")}</div>`;
 }
 
 // ---------- opportunity library ----------
@@ -599,7 +728,7 @@ $("saveEvidenceEditBtn").addEventListener("click",()=>{
 $("evidenceSearch").addEventListener("input",renderEvidence);
 $("savePractical").addEventListener("click",()=>{S.profileFacts.workAuth=$("workAuth").value;S.profileFacts.travel=$("travel").value;save();toast("Practical details saved.")});
 $("backupBtn").addEventListener("click",()=>downloadText(JSON.stringify(S,null,2),"pursuit-profile-backup.json","application/json"));
-$("restoreBackup").addEventListener("change",async()=>{const f=$("restoreBackup").files?.[0];if(!f)return;try{const x=JSON.parse(await f.text());if(!x.profile||!Array.isArray(x.evidence))throw new Error("Not a Pursuit profile backup.");S={...clone(DEFAULT),...x,version:"RC4.6"};save();renderProfile();toast("Profile restored.")}catch(e){toast(e.message)}});
+$("restoreBackup").addEventListener("change",async()=>{const f=$("restoreBackup").files?.[0];if(!f)return;try{const x=JSON.parse(await f.text());if(!x.profile||!Array.isArray(x.evidence))throw new Error("Not a Pursuit profile backup.");S={...clone(DEFAULT),...x,version:"S2-GENERALIZED-RC2.2-DEV-FINAL"};save();renderProfile();toast("Profile restored.")}catch(e){toast(e.message)}});
 
 // ---------- shell ----------
 function renderShell(){

@@ -28,12 +28,24 @@ const TAXONOMY={
   crm_modernization:{label:"CRM modernization, data integration & omnichannel ecosystem",direct:["crm modernization","next-generation crm","next generation crm","crm ecosystem","platform evolution","crm data management","data warehouse","omnichannel"],adjacent:["salesforce crm","api","apis","data integration","erp","cloud platform","digital engagement","customer engagement"]},
   crm_ops:{label:"CRM delivery, platform operations & vendor/SaaS management",direct:["platform operations","platform administration","managed services","issue resolution","vendor delivery","saas partner","vendor management","backlog management","release planning"],adjacent:["external partners","vendor resources","contractor resources","release readiness","uat","user stories","acceptance criteria"]},
   crm_governance:{label:"Governance, privacy, compliance, adoption & measurable value",direct:["privacy","compliance","quality","legal","data quality","adoption","usage","kpi","business impact","governance"],adjacent:["gdpr","pii","value realization","change management","training","success criteria"]},
+  gtm_commercial:{label:"Commercial, GTM & customer-market leadership",direct:["go-to-market","go to market","product marketing","sales","customer facing","positioning","product launch","product launches","commercial execution","demand generation","customer engagement","tender response"],adjacent:["commercial","market intelligence","competitive intelligence","ecommerce","digital commerce","campaign","customer insights"]},
+  enterprise_product:{label:"Enterprise product leadership at scale",direct:["enterprise product","enterprise products","large complex organizations","global product scaling","global portfolio","global suite","scaled the broader","2,500+ users","2500+ users","enterprise platform","enterprise data platform"],adjacent:["global","regional rollout","cloud platform","portfolio","large organizations","scaling products"]},
+  ai_production:{label:"Production AI product delivery",direct:["ai-powered product capabilities in production","ai powered product capabilities in production","production ai","production environment","production environments","deployed ai","deployed machine learning","operationalized ai","scaled ai-powered","scaled ai powered","production deployment"],adjacent:["ai product management","applied ai","machine learning","genai","generative ai","ai assistant","ai assistants","predictive analytics","human-in-the-loop","ai evaluation","pilot","pilots"]},
+  product_tenure:{label:"10+ years of product-management experience",direct:["10+ years product management","10 years product management","product manager","product owner","product management"],adjacent:["digital product","portfolio leader","commercial digital technologies"]},
   education:{label:"Education & credentials",direct:["bachelor","master","phd","mba","degree","certification","capm"],adjacent:[]},
   travel:{label:"Travel requirement",direct:["travel as required","ability to travel","travel required"],adjacent:[]},
   sponsorship:{label:"Work authorization / sponsorship",direct:["visa sponsorship","sponsorship","work authorization","authorized to work"],adjacent:[]}
 };
 
 const VALIDATION={
+  ai_production:[
+    {id:"production",label:"Which statement best describes the AI capability?",options:["Production and used by real users","Production but limited rollout","Pilot / evaluation only","Exploration / prototype","None"]},
+    {id:"role",label:"What was your role?",options:["Accountable product owner","Product lead","Contributor","Advisor"]},
+    {id:"scope",label:"What did you own directly?",multi:true,options:["Use-case prioritization","Requirements / acceptance criteria","Model or AI evaluation","Human-in-the-loop controls","Launch / rollout","Adoption / value measurement","None"]}
+  ],
+  product_tenure:[
+    {id:"years",label:"How much of your career has genuinely been product-management work, even if an older title was different?",options:["10+ years","8-9 years","6-7 years","Under 6 years"]}
+  ],
   crm_ownership:[
     {id:"ownership",label:"What was your actual relationship to the CRM product?",options:["Owned CRM roadmap/backlog","Shared CRM product ownership","Owned products that integrated with CRM","Contributor to CRM delivery","None"]},
     {id:"platform",label:"Which CRM platform did that involve?",multi:true,options:["Veeva CRM","Salesforce CRM","Other enterprise CRM","None"]},
@@ -347,43 +359,76 @@ function sentenceContaining(jd,needles=[]){
   for(const x of items){const hits=countAny(x.text,needles);if(!hits)continue;const s=hits*4+(x.section==="requirements"?1.5:x.section==="tasks"?1:0);if(s>bestScore){best=x.text;bestScore=s}}
   return best||"";
 }
+function portfolioFromJD(jd=""){
+  const t=String(jd);const patterns=[/within\s+the\s+([^\.\n]{2,70}?\bportfolio)\b/i,/for\s+the\s+([^\.\n]{2,70}?\bportfolio)\b/i,/across\s+the\s+([^\.\n]{2,70}?\bportfolio)\b/i];
+  for(const rx of patterns){const m=t.match(rx);if(m){const x=cleanLine(m[1]).replace(/^(?:a|an|the)\s+/i,"");if(x.length<80)return x}}
+  return "";
+}
 function roleFactsFromJD(jd,title="",arch=""){
   const n=norm(jd),facts=[];const add=x=>{if(x&&!facts.includes(x))facts.push(x)};
   const senior=(title.match(/Associate Director|Senior Director|Executive Director|Director|Senior Manager|Senior Product Manager|Product Manager/i)||[])[0];if(senior)add(senior.replace(/\b\w/g,c=>c.toUpperCase()));
   if(hasAny(n,["life sciences","pharmaceutical","biopharma","therapeutics"]))add("Life sciences");
   else if(hasAny(n,["medical device","digital health","healthcare software","diagnostics"]))add("Healthcare technology");
+  const portfolio=portfolioFromJD(jd);if(portfolio)add(portfolio);
+  if(hasAny(n,["enterprise product experience","enterprise products"]))add("Enterprise products");
+  if(hasAny(n,["ai-powered product capabilities","ai powered product capabilities","ai-driven innovation"]))add("AI-powered products");
   if(hasAny(n,["commercial"])&&hasAny(n,["medical affairs","medical field","medical organization","medical teams"]))add("Commercial + Medical");
   else if(hasAny(n,["commercial"]))add("Commercial");
-  const yrs=String(jd).match(/\b(\d{1,2})\+?\s+years?\s+of\s+experience\b/i);if(yrs)add(`${yrs[1]}+ years`);
+  const yrs=String(jd).match(/(?:at least\s+)?(\d{1,2})\+?\s+years?\s+of\s+experience(?:\s+in\s+product management)?/i);if(yrs)add(`${yrs[1]}+ years`);
   if(/Veeva CRM[^.\n]{0,80}strongly preferred/i.test(jd)||/experience with Veeva CRM strongly preferred/i.test(jd))add("Veeva CRM strongly preferred");
   else if(/\bVeeva CRM\b/i.test(jd))add("Veeva CRM");
-  if(/\bhybrid\b/i.test(jd))add("Hybrid");else if(/\bremote\b/i.test(jd))add("Remote");else if(/\bon[- ]site\b/i.test(jd))add("On-site");
+  if(/remote in the US/i.test(jd))add("Remote US");else if(/\bhybrid\b/i.test(jd))add("Hybrid");else if(/\bremote\b/i.test(jd))add("Remote");else if(/\bon[- ]site\b/i.test(jd))add("On-site");
   if(arch==="crm_product_owner")add("CRM platform ownership");
-  return facts.slice(0,6);
+  return facts.slice(0,7);
+}
+function exactRoleTitle(text=""){
+  const patterns=[
+    /\b((?:Associate\s+|Senior\s+|Executive\s+)?Director\s+of\s+Product\s+Management(?:\s*\([^\)\n]{2,90}\))?)/i,
+    /\b((?:Associate\s+Director|Senior\s+Director|Executive\s+Director|Director|Senior\s+Manager|Senior\s+Product\s+Manager|Product\s+Manager)[^\n.!?]{0,70}?(?:CRM\s+Product\s+Owner|Product\s+Owner|Product\s+Manager|Digital\s+Solutions))\b/i,
+    /\b(Product\s+Manager\s*-?\s*Digital\s+Solutions)\b/i
+  ];
+  for(const rx of patterns){const m=String(text).match(rx);if(m)return cleanMetaLabel(m[1]).replace(/\s+to\s+join\s+us.*$/i,"").trim()}
+  return "";
+}
+function companyFromJD(text="",url=""){
+  const t=String(text);let company="",fromUrl=false;
+  const at=t.match(/\bAt\s+([A-Z][A-Za-z0-9&.'’\-]+(?:\s+[A-Z][A-Za-z0-9&.'’\-]+){0,3})\s*,/);
+  if(at)company=at[1];
+  if(!company){
+    const possessive=[...t.matchAll(/\b([A-Z][A-Za-z0-9&.'’\-]{2,}(?:\s+[A-Z][A-Za-z0-9&.'’\-]+){0,2})[’']s\s+(?:life sciences|healthcare|solutions|products|portfolio|team)\b/gi)];
+    if(possessive.length)company=possessive[possessive.length-1][1];
+  }
+  if(!company&&/\bAlnylam Pharmaceuticals\b/i.test(t))company=(t.match(/\bAlnylam Pharmaceuticals\b/i)||[])[0]||"Alnylam Pharmaceuticals";
+  if(!company&&/\bndd Medical Technologies\b/i.test(t))company=(t.match(/\bndd Medical Technologies\b/i)||[])[0]||"ndd Medical Technologies";
+  if(!company&&url){try{company=new URL(url).hostname.replace(/^www\./,"").split(".")[0];fromUrl=true}catch{}}
+  if(fromUrl)company=company.replace(/[-_]+/g," ").replace(/\b\w/g,c=>c.toUpperCase());
+  return cleanMetaLabel(company);
+}
+function compactLocationFromJD(jd=""){
+  const t=String(jd),parts=[];const add=x=>{if(x&&!parts.includes(x))parts.push(x)};
+  if(/remote in the US|remote in the U\.S\.|remote.*United States/i.test(t))add("Remote US");
+  if(/\bBarcelona\b/i.test(t))add("Barcelona");
+  if(/\bLondon\b/i.test(t))add("London");
+  if(!parts.length){
+    const cityState=t.match(/\b(Cambridge|Boston|Burlington|Haverhill)\s*,\s*(MA|Massachusetts)\b/i);if(cityState)add(`${cityState[1]}, ${cityState[2].toUpperCase()==="MASSACHUSETTS"?"MA":cityState[2].toUpperCase()}`);
+    else if(/\bremote\b/i.test(t))add("Remote");
+  }
+  return parts.join(" / ");
 }
 function metaFromJD(jd,url=""){
   const text=String(jd),lines=sectionizeJD(jd).map(x=>x.text);
-  let title="Opportunity";
-  const tm=text.match(/\b((?:Associate\s+Director|Senior\s+Director|Executive\s+Director|Director|Senior\s+Manager|Senior\s+Product\s+Manager|Product\s+Manager)[^\n.!?]{0,65}?(?:CRM\s+Product\s+Owner|Product\s+Owner|Product\s+Manager|Digital\s+Solutions))\b/i)||text.match(/\b(Product\s+Manager\s*-?\s*Digital\s+Solutions)\b/i);
-  if(tm)title=cleanLine(tm[1]).replace(/\bwill\s+lead.*$/i,"").trim();
-  else title=lines.find(x=>/\b(product manager|product owner|director|associate director|senior manager|lead|manager)\b/i.test(x)&&x.length<150)||title;
-  let company="",companyFromUrl=false;
-  const cm=text.slice(0,450).match(/^\s*([A-Z][A-Za-z0-9&.'-]+(?:\s+[A-Z][A-Za-z0-9&.'-]+){0,3}),/m)||text.match(/\b([A-Z][A-Za-z0-9&.'-]+(?:\s+[A-Z][A-Za-z0-9&.'-]+){0,3})\s+is\s+(?:a|an|the)\b/);
-  if(cm)company=cleanMetaLabel(cm[1]);
-  if(!company&&/\bAlnylam Pharmaceuticals\b/i.test(text))company=(text.match(/\bAlnylam Pharmaceuticals\b/i)||[])[0]||"Alnylam Pharmaceuticals";
-  if(!company&&/\bndd Medical Technologies\b/i.test(text))company=(text.match(/\bndd Medical Technologies\b/i)||[])[0]||"ndd Medical Technologies";
-  if(!company&&url){try{company=new URL(url).hostname.replace(/^www\./,"").split(".")[0];companyFromUrl=true}catch{}}
-  if(companyFromUrl)company=company.replace(/[-_]+/g," ").replace(/\b\w/g,c=>c.toUpperCase());
-  const location=lines.find(x=>/\b(location|united states|remote|hybrid|massachusetts|boston|cambridge)\b/i.test(x)&&x.length<180)||"";
-  const arch=detectArchetype(jd);
-  return {title:cleanMetaLabel(title),company:cleanMetaLabel(company),location,facts:roleFactsFromJD(jd,title,arch)};
+  let title=exactRoleTitle(text)||"Opportunity";
+  if(title==="Opportunity")title=lines.find(x=>/\b(product manager|product owner|director|associate director|senior manager)\b/i.test(x)&&x.length<150)||title;
+  const company=companyFromJD(text,url),location=compactLocationFromJD(text),arch=detectArchetype(jd);
+  const report=(text.match(/report\s+to\s+the\s+([^\.\n]{3,80})/i)||[])[1]||"";
+  return {title:cleanMetaLabel(title),company:cleanMetaLabel(company),location,facts:roleFactsFromJD(jd,title,arch),reportsTo:cleanLine(report),portfolioName:portfolioFromJD(jd)};
 }
 
 function detectArchetype(jd){
-  const n=norm(jd);
-  const crm=(n.match(/\bcrm\b/g)||[]).length;
+  const n=norm(jd),crm=(n.match(/\bcrm\b/g)||[]).length;
   if(crm>=5&&hasAny(n,["product owner","product roadmap","roadmap","veeva crm","crm ecosystem"]))return"crm_product_owner";
   if(hasAny(n,["healthcare interoperability","ehr/emr","ehr","emr","pulmonary function","medical devices"])&&hasAny(n,["product manager","digital solutions","roadmap"]))return"healthcare_digital_product";
+  if(hasAny(n,["director of product management"])&&hasAny(n,["enterprise product experience","enterprise products"])&&hasAny(n,["ai-powered product capabilities","ai powered product capabilities","ai-driven innovation"])&&hasAny(n,["product strategy","product vision","portfolio"]))return"enterprise_ai_product_director";
   return"general";
 }
 function crit(category,label,requirement,tier=2,mandatory=false,preferred=false,why=""){
@@ -403,6 +448,13 @@ function archetypeCriteria(jd,arch){
     crit("interoperability","Healthcare interoperability, EHR/EMR & healthcare data exchange",sentenceContaining(jd,["healthcare interoperability","ehr","emr","healthcare data exchange","api"]),1,false,true,"Interoperability is a named product domain, not generic API experience."),
     crit("regulated","Quality, Regulatory & Clinical collaboration",sentenceContaining(jd,["quality","regulatory","clinical affairs","r&d"]),2,false,false,"Regulated cross-functional collaboration is part of the product lifecycle."),
     crit("commercialization","Customer insight, commercialization & adoption",sentenceContaining(jd,["customer insights","go-to-market","launch","commercialization","adoption"]),2,false,false,"The product manager must turn market insight into launched, adopted products.")
+  ];
+  if(arch==="enterprise_ai_product_director")return[
+    crit("product_strategy","Senior product strategy & portfolio leadership",sentenceContaining(jd,["product vision","product strategy","portfolio","prioritization","roadmaps","investment decisions"]),1,true,false,"The Director is expected to set direction across a portfolio, make prioritization and investment decisions, and communicate that strategy to senior stakeholders."),
+    crit("enterprise_product","Enterprise product leadership at scale",sentenceContaining(jd,["enterprise product experience","large, complex organizations","building and scaling products"]),1,true,false,"Enterprise scale is an explicit qualification, not a generic product-management preference."),
+    crit("ai_production","Production AI product delivery",sentenceContaining(jd,["AI-powered product capabilities in production environments","AI powered product capabilities","scalable, reliable AI powered features"]),1,true,false,"The JD explicitly requires AI capabilities delivered in production; pilots or exploration alone are not equivalent."),
+    crit("leadership","Cross-functional product execution & senior stakeholder influence",sentenceContaining(jd,["cross functional teams","matrix environment","senior stakeholders","engineering","UX","data science"]),2,true,false,"Execution depends on aligning product, engineering, UX, data science, commercial teams, and senior stakeholders without relying on direct authority."),
+    crit("gtm_commercial","Commercial, GTM & customer-market leadership",sentenceContaining(jd,["go-to-market","Product Marketing","Sales","voice of the customer","market dynamics","competitive insights"]),2,false,false,"The role must connect product strategy to customer evidence, positioning, launches, sales, and market impact.")
   ];
   return null;
 }
@@ -427,8 +479,13 @@ function requirementCandidates(jd){
   for(const c of cand){if(!by[c.category])by[c.category]={...c,mentions:1};else{by[c.category].mentions++;by[c.category].score+=Math.min(3,c.score*.15);by[c.category].mandatory||=c.mandatory;if(c.score>(by[c.category]._bestScore||0)){by[c.category].requirement=c.requirement;by[c.category]._bestScore=c.score}}}
   return Object.values(by).sort((a,b)=>b.score-a.score);
 }
-function topFiveRequirements(jd){const arch=detectArchetype(jd),special=archetypeCriteria(jd,arch);if(special)return special;return requirementCandidates(jd).filter(x=>!["travel","sponsorship","education"].includes(x.category)).slice(0,5)}
-function gateRequirements(jd){return requirementCandidates(jd).filter(x=>["travel","sponsorship","education"].includes(x.category))}
+function topFiveRequirements(jd){const arch=detectArchetype(jd),special=archetypeCriteria(jd,arch);if(special)return special;return requirementCandidates(jd).filter(x=>!["travel","sponsorship","education","product_tenure"].includes(x.category)).slice(0,5)}
+function gateRequirements(jd){
+  const out=requirementCandidates(jd).filter(x=>["travel","sponsorship","education"].includes(x.category));
+  const pm=String(jd).match(/(?:at least\s+)?(\d{1,2})\+?\s+years?\s+of\s+experience\s+in\s+product management/i);
+  if(pm)out.unshift({category:"product_tenure",label:`${pm[1]}+ years of product-management experience`,requirement:cleanLine(pm[0]),requiredYears:Number(pm[1]),tier:1,mandatory:true,critical:true,importance:"Eligibility gate"});
+  return out;
+}
 
 function evidenceEligible(c,e){
   if(!e||e.usable===false)return false;
@@ -453,84 +510,151 @@ function bestGeneric(c,evidence=[]){
   }).sort((a,b)=>b._score-a._score);
   return ranked;
 }
-function statusObj(status,gapType,reason,best,remembered=null,extra={}){return {status,gapType,reason,best:best||null,remembered,ranked:extra.ranked||[],...extra}}
+function evidenceSnippetScore(text,c){
+  const tax=TAXONOMY[c.category]||{direct:[],adjacent:[]};return similarity(c.requirement+" "+c.label,text)*.45+Math.min(.5,countAny(text,tax.direct)*.17)+Math.min(.18,countAny(text,tax.adjacent)*.06);
+}
+function evidenceFragments(text,c){
+  const cleaned=cleanLine(text),parts=cleaned.split(/(?<=[.!?;])\s+|\s*;\s*/).map(cleanLine).filter(x=>x.length>24);
+  const candidates=(parts.length?parts:[cleaned]).map(x=>({x,s:evidenceSnippetScore(x,c)})).sort((a,b)=>b.s-a.s);
+  return candidates.filter(x=>x.s>.04).slice(0,2).map(({x})=>x.length>205?x.slice(0,202).replace(/\s+\S*$/,'')+"…":x);
+}
+function supportingEvidence(c,ranked=[]){
+  const out=[],seen=new Set();
+  const preferred=ranked.filter(e=>["work","validation"].includes(e.evidenceType||(e.sourceType==="validation"?"validation":"work")));
+  const fallback=ranked.filter(e=>!preferred.includes(e));
+  for(const e of preferred){
+    if((e._score||0)<.18)continue;
+    for(const text of evidenceFragments(e.statement,c)){
+      const key=norm(text);if(!text||seen.has(key))continue;seen.add(key);
+      out.push({text,company:e.company||"",role:e.role||"",period:e.period||"",sourceType:e.evidenceType||(e.sourceType==="validation"?"validation":"work"),score:e._score||0});if(out.length>=3)return out;
+    }
+  }
+  if(!out.length){for(const e of fallback){
+    if((e._score||0)<.22)continue;for(const text of evidenceFragments(e.statement,c)){const key=norm(text);if(!text||seen.has(key))continue;seen.add(key);out.push({text,company:e.company||"",role:e.role||"",period:e.period||"",sourceType:e.evidenceType||"resume",score:e._score||0});if(out.length>=2)return out;}
+  }}
+  return out;
+}
+function statusObj(status,gapType,reason,best,remembered=null,extra={}){return {status,gapType,reason,best:best||null,remembered,ranked:extra.ranked||[],supportingEvidence:extra.supportingEvidence||[],...extra}}
 function rememberedFor(category,evidence=[]){return evidence.filter(e=>e.sourceType==="validation"&&e.category===category).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)))[0]||null}
 function hasInSameRole(evidence,phrasesA,phrasesB){return roleGroups(evidence).some(g=>hasAny(g.text,phrasesA)&&hasAny(g.text,phrasesB))}
 
 function matchCriterion(c,evidence=[]){
-  const eligible=evidence.filter(e=>evidenceEligible(c,e)),all=eligible.map(e=>norm(e.statement)).join(" "),ranked=bestGeneric(c,eligible),top=ranked[0]||null,workCandidate=ranked.find(e=>["work","validation"].includes(e.evidenceType||(e.sourceType==="validation"?"validation":"work"))),best=workCandidate&&(!top||workCandidate._score>=top._score*.62)?workCandidate:top,remembered=rememberedFor(c.category,evidence);
+  const eligible=evidence.filter(e=>evidenceEligible(c,e)),all=eligible.map(e=>norm(e.statement)).join(" "),ranked=bestGeneric(c,eligible),top=ranked[0]||null,workCandidate=ranked.find(e=>["work","validation"].includes(e.evidenceType||(e.sourceType==="validation"?"validation":"work"))),best=workCandidate&&(!top||workCandidate._score>=top._score*.62)?workCandidate:top,remembered=rememberedFor(c.category,evidence),support=supportingEvidence(c,ranked);
+  const pack=extra=>({ranked:ranked.slice(0,6),supportingEvidence:support,...(extra||{})});
+  if(c.category==="product_strategy"){
+    const directWork=ranked.find(e=>(e.evidenceType==="work"||e.sourceType==="validation")&&countAny(e.statement,TAXONOMY.product_strategy.direct)>=2);
+    if(directWork)return statusObj("Strong","None","Direct work evidence covers portfolio/product strategy, prioritization, roadmap ownership, and lifecycle decisions.",directWork,remembered,pack());
+  }
+  if(c.category==="enterprise_product"){
+    const groups=roleGroups(evidence),g=groups.find(x=>hasAny(x.text,["global suite","global portfolio","global product scaling","2,500+ users","2500+ users","scaled the broader"])&&hasAny(x.text,["product","portfolio","roadmap","cloud platform"]));
+    const direct=ranked.find(e=>e.evidenceType==="work"&&hasAny(e.statement,TAXONOMY.enterprise_product.direct));
+    if(direct||g)return statusObj("Strong","None","The resume shows products/portfolios scaled across a global enterprise context with substantial user and operating scope.",direct||best,remembered,pack());
+    if(best&&best._score>=.3)return statusObj("Partial","Wording gap","Scaling evidence exists, but enterprise customer/organization scope is not fully explicit.",best,remembered,pack());
+    return statusObj("Gap","Capability gap","No verified evidence currently establishes enterprise product leadership at scale.",best,remembered,pack());
+  }
+  if(c.category==="ai_production"){
+    const val=evidence.find(e=>e.sourceType==="validation"&&e.category==="ai_production"&&e.direct&&!e.negative);
+    const prod=ranked.find(e=>(e.evidenceType==="work"||e.sourceType==="validation")&&hasAny(e.statement,TAXONOMY.ai_production.direct)&&hasAny(e.statement,["ai","machine learning","genai","generative ai"]));
+    const ai=ranked.find(e=>(e.evidenceType==="work"||e.sourceType==="validation")&&hasAny(e.statement,TAXONOMY.ai_production.adjacent));
+    if(val||prod)return statusObj("Strong","None","Production AI product delivery is explicitly verified, including real-user deployment rather than pilot-only work.",val||prod,remembered,pack());
+    if(ai)return statusObj("Partial","Resume gap","Substantial AI product-management evidence exists, but the resume does not clearly distinguish sustained production deployment from pilots, evaluation, or exploration.",ai,remembered,pack());
+    return statusObj("Gap","Capability gap","No verified AI product-delivery evidence is currently available.",best,remembered,pack());
+  }
+  if(c.category==="leadership"){
+    const direct=ranked.find(e=>e.evidenceType==="work"&&hasAny(e.statement,["cross-functional","matrix leadership","lead cross-functional"])&&hasAny(e.statement,["engineering","data science","commercial","stakeholder","external partners"]));
+    if(direct)return statusObj("Strong","None","Direct work evidence shows cross-functional product leadership across technical, commercial, and partner teams.",direct,remembered,pack());
+  }
+  if(c.category==="gtm_commercial"){
+    const direct=ranked.find(e=>e.evidenceType==="work"&&countAny(e.statement,TAXONOMY.gtm_commercial.direct)>=2);
+    if(direct)return statusObj("Strong","None","Direct commercial evidence covers customer engagement, demand generation/sales-facing workflows, and market/competitive translation.",direct,remembered,pack());
+    const adjacent=ranked.find(e=>e.evidenceType==="work"&&(countAny(e.statement,TAXONOMY.gtm_commercial.direct)+countAny(e.statement,TAXONOMY.gtm_commercial.adjacent)>=2));
+    if(adjacent)return statusObj("Partial","Wording gap","Strong commercial and customer-market evidence exists, but explicit product positioning/launch ownership is not fully stated.",adjacent,remembered,pack());
+  }
   if(remembered?.negative)return statusObj("Gap","Capability gap","Remembered from a previous check: "+remembered.statement,remembered,remembered,{ranked:ranked.slice(0,4),confirmedGap:true});
   if(c.category==="crm_ownership"){
-    if(remembered?.direct)return statusObj("Strong","None","Direct CRM product ownership was verified in a previous gap check.",remembered,remembered,{ranked:ranked.slice(0,4)});
+    if(remembered?.direct)return statusObj("Strong","None","Direct CRM product ownership was verified in a previous gap check.",remembered,remembered,pack());
     const direct=evidence.find(e=>e.company&&hasAny(e.statement,["crm","salesforce","veeva"])&&hasAny(e.statement,["own crm","owned crm","crm roadmap","crm backlog","accountable for crm","crm product owner","product owner for crm"]));
-    if(direct)return statusObj("Strong","None","Direct CRM ownership and roadmap/backlog evidence is explicit.",direct,remembered,{ranked:ranked.slice(0,4)});
-    if(hasInSameRole(evidence,["crm","salesforce"],["own product","portfolio strategy","roadmap","backlog","product owner"]))return statusObj("Adjacent","Resume gap","You own products in the same role and work with Salesforce CRM, but ownership of the CRM platform itself is not established.",best,remembered,{ranked:ranked.slice(0,4)});
-    if(hasAny(all,["salesforce crm","crm integration","crm"]))return statusObj("Adjacent","Adjacent experience","CRM integration experience exists, but product ownership of the CRM ecosystem is not verified.",best,remembered,{ranked:ranked.slice(0,4)});
-    return statusObj("Gap","Capability gap","No verified evidence shows ownership of a CRM product or platform roadmap.",best,remembered,{ranked:ranked.slice(0,4)});
+    if(direct)return statusObj("Strong","None","Direct CRM ownership and roadmap/backlog evidence is explicit.",direct,remembered,pack());
+    if(hasInSameRole(evidence,["crm","salesforce"],["own product","portfolio strategy","roadmap","backlog","product owner"]))return statusObj("Adjacent","Resume gap","You own products in the same role and work with Salesforce CRM, but ownership of the CRM platform itself is not established.",best,remembered,pack());
+    if(hasAny(all,["salesforce crm","crm integration","crm"]))return statusObj("Adjacent","Adjacent experience","CRM integration experience exists, but product ownership of the CRM ecosystem is not verified.",best,remembered,pack());
+    return statusObj("Gap","Capability gap","No verified evidence shows ownership of a CRM product or platform roadmap.",best,remembered,pack());
   }
   if(c.category==="crm_field"){
     const veeva=hasAny(all,["veeva crm"]),medical=hasAny(all,["medical affairs","medical field"]),commercialField=hasAny(all,["commercial field","field engagement","field processes"]);
-    if(remembered?.direct)return statusObj("Strong","None","Direct CRM/field-process experience was verified previously.",remembered,remembered,{ranked:ranked.slice(0,4)});
-    if(veeva&&(medical||commercialField))return statusObj("Strong","None","Direct Veeva CRM and relevant field-process experience is verified.",best,remembered,{ranked:ranked.slice(0,4)});
-    if(veeva||medical||commercialField)return statusObj("Partial","Resume gap","Direct experience covers part of the field-CRM requirement, but not the full Veeva + Commercial/Medical context.",best,remembered,{ranked:ranked.slice(0,4)});
-    if(hasAny(all,["salesforce crm","account planning","lead-to-cash","omnichannel","customer engagement","commercial analytics"]))return statusObj("Adjacent","Adjacent experience","Salesforce/commercial workflow experience is transferable, but Veeva CRM and direct Commercial/Medical field-process experience are not established.",best,remembered,{ranked:ranked.slice(0,4)});
-    return statusObj("Gap","Capability gap","No verified life-sciences CRM field-process experience is currently established.",best,remembered,{ranked:ranked.slice(0,4)});
+    if(remembered?.direct)return statusObj("Strong","None","Direct CRM/field-process experience was verified previously.",remembered,remembered,pack());
+    if(veeva&&(medical||commercialField))return statusObj("Strong","None","Direct Veeva CRM and relevant field-process experience is verified.",best,remembered,pack());
+    if(veeva||medical||commercialField)return statusObj("Partial","Resume gap","Direct experience covers part of the field-CRM requirement, but not the full Veeva + Commercial/Medical context.",best,remembered,pack());
+    if(hasAny(all,["salesforce crm","account planning","lead-to-cash","omnichannel","customer engagement","commercial analytics"]))return statusObj("Adjacent","Adjacent experience","Salesforce/commercial workflow experience is transferable, but Veeva CRM and direct Commercial/Medical field-process experience are not established.",best,remembered,pack());
+    return statusObj("Gap","Capability gap","No verified life-sciences CRM field-process experience is currently established.",best,remembered,pack());
   }
   if(c.category==="crm_modernization"){
-    if(remembered?.direct)return statusObj("Strong","None","Direct CRM modernization experience was verified previously.",remembered,remembered,{ranked:ranked.slice(0,4)});
+    if(remembered?.direct)return statusObj("Strong","None","Direct CRM modernization experience was verified previously.",remembered,remembered,pack());
     const modern=hasAny(all,["crm modernization","crm ecosystem","platform evolution","next-generation crm"]),integr=hasAny(all,["salesforce crm","data integration","apis","api","erp"]),omni=hasAny(all,["omnichannel","digital engagement","customer engagement"]);
-    if(modern&&integr)return statusObj("Strong","None","Direct CRM modernization and integration evidence is verified.",best,remembered,{ranked:ranked.slice(0,4)});
-    if(integr&&omni)return statusObj("Partial","Wording gap","Strong CRM/data-integration and omnichannel evidence exists, but explicit CRM-modernization/platform-evolution ownership is not established.",best,remembered,{ranked:ranked.slice(0,4)});
-    if(integr)return statusObj("Adjacent","Adjacent experience","CRM/data-integration experience exists, but modernization and omnichannel ecosystem ownership are not yet explicit.",best,remembered,{ranked:ranked.slice(0,4)});
-    return statusObj("Gap","Capability gap","No verified CRM modernization or ecosystem-integration evidence is currently available.",best,remembered,{ranked:ranked.slice(0,4)});
+    if(modern&&integr)return statusObj("Strong","None","Direct CRM modernization and integration evidence is verified.",best,remembered,pack());
+    if(integr&&omni)return statusObj("Partial","Wording gap","Strong CRM/data-integration and omnichannel evidence exists, but explicit CRM-modernization/platform-evolution ownership is not established.",best,remembered,pack());
+    if(integr)return statusObj("Adjacent","Adjacent experience","CRM/data-integration experience exists, but modernization and omnichannel ecosystem ownership are not yet explicit.",best,remembered,pack());
+    return statusObj("Gap","Capability gap","No verified CRM modernization or ecosystem-integration evidence is currently available.",best,remembered,pack());
   }
   if(c.category==="crm_ops"){
-    if(remembered?.direct)return statusObj("Strong","None","Platform-operations/vendor scope was verified previously.",remembered,remembered,{ranked:ranked.slice(0,4)});
+    if(remembered?.direct)return statusObj("Strong","None","Platform-operations/vendor scope was verified previously.",remembered,remembered,pack());
     const delivery=hasAny(all,["backlog","user stories","acceptance criteria","release planning","uat","go-live","release readiness"]),vendor=hasAny(all,["vendor","external partners","contractor"]),ops=hasAny(all,["platform operations","platform administration","managed services","issue resolution"]);
-    if(delivery&&vendor&&ops)return statusObj("Strong","None","Delivery, platform operations, and vendor-management evidence are all explicit.",best,remembered,{ranked:ranked.slice(0,4)});
-    if(delivery&&vendor)return statusObj("Partial","Resume gap","Product delivery and vendor/partner leadership are strong; CRM platform operations, managed services, or issue-resolution ownership still need clarification.",best,remembered,{ranked:ranked.slice(0,4)});
-    if(delivery||vendor)return statusObj("Adjacent","Adjacent experience","Some delivery/partner evidence exists, but the operating scope of the CRM platform is not established.",best,remembered,{ranked:ranked.slice(0,4)});
-    return statusObj("Gap","Capability gap","No verified product-delivery or platform-operations evidence is currently available.",best,remembered,{ranked:ranked.slice(0,4)});
+    if(delivery&&vendor&&ops)return statusObj("Strong","None","Delivery, platform operations, and vendor-management evidence are all explicit.",best,remembered,pack());
+    if(delivery&&vendor)return statusObj("Partial","Resume gap","Product delivery and vendor/partner leadership are strong; CRM platform operations, managed services, or issue-resolution ownership still need clarification.",best,remembered,pack());
+    if(delivery||vendor)return statusObj("Adjacent","Adjacent experience","Some delivery/partner evidence exists, but the operating scope of the CRM platform is not established.",best,remembered,pack());
+    return statusObj("Gap","Capability gap","No verified product-delivery or platform-operations evidence is currently available.",best,remembered,pack());
   }
   if(c.category==="crm_governance"){
     const govTerms=["governance","privacy","gdpr","pii","compliance","data quality"],adoptTerms=["adoption","usage","training","change management"],valueTerms=["value realization","business impact","commercial impact","kpi","success criteria","value measurement"];
     const gov=hasAny(all,govTerms),adopt=hasAny(all,adoptTerms),value=hasAny(all,valueTerms),support=ranked.find(e=>e.evidenceType==="work"&&hasAny(e.statement,govTerms))||best;
-    if((gov&&adopt)||(gov&&value))return statusObj("Strong","None","Governance/privacy plus adoption or measurable-value evidence is explicit.",support,remembered,{ranked:ranked.slice(0,4)});
-    if(gov||adopt||value)return statusObj("Partial","Wording gap","Relevant governance, adoption, or value evidence exists, but the complete life-sciences CRM operating context is not explicit.",support,remembered,{ranked:ranked.slice(0,4)});
-    return statusObj("Gap","Capability gap","No verified governance/adoption/value evidence is currently available.",best,remembered,{ranked:ranked.slice(0,4)});
+    if((gov&&adopt)||(gov&&value))return statusObj("Strong","None","Governance/privacy plus adoption or measurable-value evidence is explicit.",support,remembered,pack());
+    if(gov||adopt||value)return statusObj("Partial","Wording gap","Relevant governance, adoption, or value evidence exists, but the complete life-sciences CRM operating context is not explicit.",support,remembered,pack());
+    return statusObj("Gap","Capability gap","No verified governance/adoption/value evidence is currently available.",best,remembered,pack());
   }
   if(c.category==="interoperability"){
     const direct=hasAny(all,TAXONOMY.interoperability.direct),api=hasAny(all,TAXONOMY.interoperability.adjacent),apiWork=ranked.find(e=>e.evidenceType==="work"&&hasAny(e.statement,TAXONOMY.interoperability.adjacent))||best;
-    if(remembered?.direct||direct){const directWork=ranked.find(e=>e.evidenceType==="work"&&hasAny(e.statement,TAXONOMY.interoperability.direct));return statusObj("Strong","None","Direct healthcare interoperability evidence is verified.",remembered||directWork||best,remembered,{ranked:ranked.slice(0,4)})}
-    if(api)return statusObj("Adjacent","Adjacent experience","API/data-integration evidence exists, but EHR/EMR/HL7/FHIR or healthcare data-exchange experience is not verified.",apiWork,remembered,{ranked:ranked.slice(0,4)});
-    return statusObj("Gap","Capability gap","No verified healthcare interoperability evidence is currently available.",best,remembered,{ranked:ranked.slice(0,4)});
+    if(remembered?.direct||direct){const directWork=ranked.find(e=>e.evidenceType==="work"&&hasAny(e.statement,TAXONOMY.interoperability.direct));return statusObj("Strong","None","Direct healthcare interoperability evidence is verified.",remembered||directWork||best,remembered,pack())}
+    if(api)return statusObj("Adjacent","Adjacent experience","API/data-integration evidence exists, but EHR/EMR/HL7/FHIR or healthcare data-exchange experience is not verified.",apiWork,remembered,pack());
+    return statusObj("Gap","Capability gap","No verified healthcare interoperability evidence is currently available.",best,remembered,pack());
   }
   if(c.category==="healthcare_domain"){
     const direct=hasAny(all,TAXONOMY.healthcare_domain.direct),adj=hasAny(all,TAXONOMY.healthcare_domain.adjacent);
-    if(remembered?.direct||direct)return statusObj("Strong","None","Direct healthcare/medical-technology domain evidence is verified.",remembered||best,remembered,{ranked:ranked.slice(0,4)});
-    if(adj)return statusObj("Adjacent","Adjacent experience","Strong life-science/biomedical experience exists, but direct medical-device/digital-health product experience is not verified.",best,remembered,{ranked:ranked.slice(0,4)});
+    if(remembered?.direct||direct)return statusObj("Strong","None","Direct healthcare/medical-technology domain evidence is verified.",remembered||best,remembered,pack());
+    if(adj)return statusObj("Adjacent","Adjacent experience","Strong life-science/biomedical experience exists, but direct medical-device/digital-health product experience is not verified.",best,remembered,pack());
   }
   if(c.category==="regulated"){
-    if(remembered?.direct)return statusObj("Strong","None","Direct Quality/Regulatory/Clinical collaboration was verified previously.",remembered,remembered,{ranked:ranked.slice(0,4)});
+    if(remembered?.direct)return statusObj("Strong","None","Direct Quality/Regulatory/Clinical collaboration was verified previously.",remembered,remembered,pack());
     const exact=countAny(all,["quality","regulatory affairs","clinical affairs"]),adj=countAny(all,["r&d","engineering","compliance","governance","privacy","release readiness","go/no-go"]);
-    if(exact>=2)return statusObj("Strong","None","Direct Quality/Regulatory/Clinical collaboration is verified.",best,remembered,{ranked:ranked.slice(0,4)});
-    if(exact===1||adj>0)return statusObj("Partial","Resume gap","Related regulated-development collaboration exists, but the exact functions or scope need clarification.",best,remembered,{ranked:ranked.slice(0,4)});
-    return statusObj("Gap","Capability gap","No verified Quality/Regulatory/Clinical collaboration is currently available.",best,remembered,{ranked:ranked.slice(0,4)});
+    if(exact>=2)return statusObj("Strong","None","Direct Quality/Regulatory/Clinical collaboration is verified.",best,remembered,pack());
+    if(exact===1||adj>0)return statusObj("Partial","Resume gap","Related regulated-development collaboration exists, but the exact functions or scope need clarification.",best,remembered,pack());
+    return statusObj("Gap","Capability gap","No verified Quality/Regulatory/Clinical collaboration is currently available.",best,remembered,pack());
   }
   const valBest=best?.sourceType==="validation"&&best.category===c.category?best:null;
-  if(valBest?.direct)return statusObj("Strong","None","Direct verified evidence supports this requirement.",valBest,valBest,{ranked:ranked.slice(0,4)});
+  if(valBest?.direct)return statusObj("Strong","None","Direct verified evidence supports this requirement.",valBest,valBest,pack());
   const bestWork=ranked.find(e=>["work","validation"].includes(e.evidenceType||(e.sourceType==="validation"?"validation":"work"))&&e._score>=.66);
-  if(bestWork)return statusObj("Strong","None","Direct verified work evidence supports this requirement.",bestWork,remembered,{ranked:ranked.slice(0,4)});
+  if(bestWork)return statusObj("Strong","None","Direct verified work evidence supports this requirement.",bestWork,remembered,pack());
   if(best){
     const t=best.evidenceType||(best.sourceType==="validation"?"validation":"work");
-    if(best._score>=.44)return statusObj("Partial","Wording gap",t==="capability"||t==="summary"?"The resume names this capability, but stronger work-example evidence is needed.":"Relevant experience exists, but the resume does not fully express the required scope.",best,remembered,{ranked:ranked.slice(0,4)});
-    if(best._score>=.23)return statusObj("Adjacent","Adjacent experience","Transferable evidence exists, but the exact context or scope is not verified.",best,remembered,{ranked:ranked.slice(0,4)})
+    if(best._score>=.44)return statusObj("Partial","Wording gap",t==="capability"||t==="summary"?"The resume names this capability, but stronger work-example evidence is needed.":"Relevant experience exists, but the resume does not fully express the required scope.",best,remembered,pack());
+    if(best._score>=.23)return statusObj("Adjacent","Adjacent experience","Transferable evidence exists, but the exact context or scope is not verified.",best,remembered,pack())
   }
-  return statusObj("Gap","Capability gap","No verified evidence currently establishes this requirement.",best,remembered,{ranked:ranked.slice(0,4)});
+  return statusObj("Gap","Capability gap","No verified evidence currently establishes this requirement.",best,remembered,pack());
 }
 
+function yearsFromPeriod(period=""){
+  const m=String(period).match(/\b(19|20)\d{2}\b/g);if(!m?.length)return 0;const start=Number(m[0]),end=/present|current/i.test(period)?new Date().getFullYear():Number(m[1]||m[0]);return Math.max(0,end-start);
+}
+function explicitProductYears(evidence=[]){
+  const seen=new Map();for(const e of evidence){if(e.usable===false||e.evidenceType!=="work")continue;const role=e.role||"";if(!/product\s+(?:owner|manager)|director\s+of\s+product|head\s+of\s+product/i.test(role))continue;const key=[e.company,role,e.period].join("|");seen.set(key,Math.max(seen.get(key)||0,yearsFromPeriod(e.period)))}return [...seen.values()].reduce((a,b)=>a+b,0);
+}
 function gateStatus(gates,profileFacts={},evidence=[]){
   return gates.map(g=>{
+    if(g.category==="product_tenure"){
+      const answer=profileFacts.productYears||"",verified=evidence.find(e=>e.sourceType==="validation"&&e.category==="product_tenure"&&!e.negative),explicit=explicitProductYears(evidence),req=g.requiredYears||10;
+      if(answer==="10plus"||verified?.direct)return {...g,status:"clear",reason:`Profile confirms ${req}+ years of genuine product-management work, including leadership scope.`};
+      if(answer==="under10")return {...g,status:"missing",reason:`The role requires ${req}+ years of product-management experience, and the profile confirms less than that.`};
+      if(explicit>=req)return {...g,status:"clear",reason:`Resume titles explicitly establish approximately ${Math.round(explicit)} years of product-management experience.`};
+      return {...g,status:"uncertain",reason:`The resume explicitly shows about ${Math.round(explicit)} years under Product Owner/Product Manager titles. Earlier product-management-equivalent work may count, but Pursuit will not assume it.`};
+    }
     if(g.category==="sponsorship"){
       const noSponsor=/not available|no sponsorship|cannot sponsor/i.test(g.requirement),auth=profileFacts.workAuth||"";let status="uncertain",reason="Work authorization is not specified.";
       if(noSponsor&&auth==="sponsorship"){status="missing";reason="The role says sponsorship is unavailable, but the profile says sponsorship is required."}else if(noSponsor&&["authorized","citizen","permanent"].includes(auth)){status="clear";reason="Profile indicates U.S. work authorization without sponsorship."}return {...g,status,reason};
@@ -540,6 +664,7 @@ function gateStatus(gates,profileFacts={},evidence=[]){
     return {...g,status:"uncertain",reason:"Requires confirmation."};
   });
 }
+
 function weightedFit(criteria,matches){const val={Strong:1,Partial:.68,Adjacent:.38,Gap:0};let n=0,d=0;criteria.forEach((c,i)=>{const w=c.tier===1?1.65:1;d+=w;n+=(val[matches[i].status]||0)*w});return d?n/d:.2}
 function alignmentLabel(level){return ["Weak","Limited","Strong","Excellent"][clamp(level,0,3)]}
 function alignmentReason(kind,criteria,matches,arch){
@@ -568,14 +693,17 @@ function alignments(criteria,matches,gates,arch){
   return {recruiter:{label:alignmentLabel(r),level:r,reason:alignmentReason("recruiter",criteria,matches,arch)},manager:{label:alignmentLabel(m),level:m,reason:alignmentReason("manager",criteria,matches,arch)},fit};
 }
 function scores(criteria,matches,gates=[],arch="general",evidence=[]){
-  const fit=weightedFit(criteria,matches),miss=gates.filter(g=>g.status==="missing").length,unc=gates.filter(g=>g.status==="uncertain").length;
-  const explicit=criteria.reduce((n,c,i)=>n+({Strong:1,Partial:.72,Adjacent:.38,Gap:.05}[matches[i].status]||0)*(c.tier===1?1.4:1),0)/criteria.reduce((n,c)=>n+(c.tier===1?1.4:1),0);
-  const ats=clamp(Math.round(28+explicit*67-miss*20-unc*1.5),8,96),a=alignments(criteria,matches,gates,arch);
+  const fit=weightedFit(criteria,matches);
+  const explicit=criteria.reduce((n,c,i)=>n+({Strong:1,Partial:.72,Adjacent:.38,Gap:.05}[matches[i].status]||0)*(c.tier===1?1.4:1),0)/
+    criteria.reduce((n,c)=>n+(c.tier===1?1.4:1),0);
+  // ATS is strictly resume-to-JD explicitness. Eligibility/tenure gates influence recommendation and confidence, not ATS.
+  const ats=clamp(Math.round(30+explicit*66),8,96),a=alignments(criteria,matches,gates,arch);
   return {ats,fit:a.fit,recruiterAlignment:a.recruiter,managerAlignment:a.manager};
 }
-function confidence(criteria,matches,evidence=[]){
+function confidence(criteria,matches,evidence=[],gates=[]){
   const tierUnknown=criteria.map((c,i)=>({c,m:matches[i]})).filter(x=>x.c.tier===1&&["Resume gap","Adjacent experience"].includes(x.m.gapType)&&!x.m.confirmedGap).length;
   if(evidence.length<8)return {label:"Low",reason:"The source profile is too thin for a confident judgment."};
+  if(gates.some(g=>g.critical&&g.status==="uncertain"))return {label:"Medium",reason:"A mandatory experience gate still needs confirmation before the recommendation can be treated as final."};
   if(tierUnknown>=2)return {label:"Medium",reason:"A few decision-changing questions remain unresolved."};
   if(tierUnknown===1)return {label:"Medium",reason:"One defining requirement still depends on clarification."};
   return {label:"High",reason:"The decision is well supported by explicit or previously verified evidence."};
@@ -583,12 +711,19 @@ function confidence(criteria,matches,evidence=[]){
 const REC_RANK={"PASS":0,"LOW PROBABILITY":1,"SELECTIVE APPLY":2,"APPLY":3,"HIGH PRIORITY - APPLY":4};
 function recommendation(criteria,matches,gates,s,arch="general"){
   if(gates.some(g=>g.status==="missing"))return {label:"PASS",tone:"red",reason:"A stated eligibility requirement appears not to be met.",aside:"Next. Your time is worth more."};
+  const criticalUnknown=gates.find(g=>g.critical&&g.status==="uncertain");
   const rows=criteria.map((c,i)=>({c,m:matches[i]})),tier1=rows.filter(x=>x.c.tier===1),gaps=tier1.filter(x=>x.m.status==="Gap").length,nonStrong=tier1.filter(x=>x.m.status!=="Strong").length;
   if(arch==="crm_product_owner"){
     const own=rows.find(x=>x.c.category==="crm_ownership")?.m.status,field=rows.find(x=>x.c.category==="crm_field")?.m.status;
     if(["Gap","Adjacent"].includes(own)&&["Gap","Adjacent"].includes(field))return {label:"LOW PROBABILITY",tone:"red",reason:"The resume shows CRM-connected product experience, but not enough direct evidence of CRM-platform ownership or life-sciences field-CRM depth for this specific Product Owner role.",aside:"Save the tailoring time unless those gaps are hiding in your experience."};
   }
   if(gaps)return {label:"LOW PROBABILITY",tone:"red",reason:"At least one defining hiring gate is unsupported on the current evidence.",aside:"Don't spend 45 minutes polishing around a core gap."};
+  if(criticalUnknown&&nonStrong){
+    const pending=tier1.filter(x=>x.m.status!=="Strong"&&!gateCriterionOverlap(criticalUnknown,x.c)).map(x=>x.c.label);
+    if(pending.length)return {label:"SELECTIVE APPLY",tone:"amber",reason:`The underlying fit is credible, but the decision is not final until Pursuit resolves ${criticalUnknown.label} and ${pending[0]}.`,aside:"Two answers could materially change where this lands."};
+    return {label:"SELECTIVE APPLY",tone:"amber",reason:`The underlying fit is credible, but the decision is not final until Pursuit resolves ${criticalUnknown.label}.`,aside:"One answer could materially change where this lands."};
+  }
+  if(criticalUnknown)return {label:"SELECTIVE APPLY",tone:"amber",reason:`The core experience fit is credible, but a mandatory qualification still needs confirmation: ${criticalUnknown.label}.`,aside:"Answer the gate before spending serious tailoring time."};
   if(nonStrong>=2||s.managerAlignment.label==="Limited"||s.recruiterAlignment.label==="Limited")return {label:"SELECTIVE APPLY",tone:"amber",reason:"There is a credible bridge to the role, but at least one defining requirement is still adjacent or under-proven.",aside:"Interesting, but don't fall in love yet."};
   if(s.recruiterAlignment.label==="Weak"||s.managerAlignment.label==="Weak")return {label:"LOW PROBABILITY",tone:"red",reason:"The role's defining needs are not directly supported enough to justify a heavy tailoring investment.",aside:"Save the 45 minutes."};
   if(s.recruiterAlignment.label==="Excellent"&&s.managerAlignment.label==="Excellent")return {label:"HIGH PRIORITY - APPLY",tone:"green",reason:"Direct evidence covers the role's defining requirements with few meaningful gaps.",aside:"This one deserves your time."};
@@ -605,15 +740,17 @@ function decisionChanging(criteria,matches,gates,s,arch){
   });
   return out.sort((a,b)=>(b.changesDecision-a.changesDecision)||(a.tier-b.tier)||(b.changesOutput-a.changesOutput)).slice(0,3);
 }
-function hiringProblem(criteria,arch){
+function hiringProblem(criteria,arch,meta={}){
   if(arch==="crm_product_owner")return "This is not a generic product-owner role. They are hiring someone to own a life-sciences CRM ecosystem, modernize it, and keep Commercial/Medical workflows compliant, reliable, and adopted.";
   if(arch==="healthcare_digital_product")return "The job is really about owning a healthcare digital product, navigating regulated cross-functional delivery, and translating interoperability/customer needs into a roadmap that ships.";
+  if(arch==="enterprise_ai_product_director"){const portfolio=meta.portfolioName||"the product portfolio";return `Lead ${portfolio}: set product and investment direction, scale enterprise products, turn AI into reliable production capabilities, and connect product execution to customers and commercial outcomes.`;}
   const x=criteria.slice(0,3).map(c=>c.label.toLowerCase());return x.length?`The JD is long. These are the problems that actually drive the decision: ${x.join("; ")}.`:"";
 }
 function primaryRisk(criteria,matches,gates){
-  const bad=criteria.map((c,i)=>({c,m:matches[i]})).filter(x=>x.c.tier===1&&x.m.status!=="Strong").concat(criteria.map((c,i)=>({c,m:matches[i]})).filter(x=>x.c.tier!==1&&x.m.status!=="Strong"));
-  if(bad[0])return `What is holding this back: ${bad[0].c.label}. ${bad[0].m.reason}`;
-  const ug=gates.find(g=>g.status!=="clear");if(ug)return`One practical check remains: ${ug.label}. ${ug.reason}`;
+  const bad=criteria.map((c,i)=>({c,m:matches[i]})).filter(x=>x.c.tier===1&&x.m.status!=="Strong")
+    .concat(criteria.map((c,i)=>({c,m:matches[i]})).filter(x=>x.c.tier!==1&&x.m.status!=="Strong"));
+  if(bad[0])return `What is holding this back: ${bad[0].c.label}. ${conciseHumanReason(bad[0].m.reason,1,240)}`;
+  const ug=gates.find(g=>g.status!=="clear");if(ug)return`One practical check remains: ${ug.label}. ${conciseHumanReason(ug.reason,1,220)}`;
   return"No material gap is showing up in the role's defining requirements.";
 }
 function validationQuestions(category){return VALIDATION[category]||[{id:"role",label:"What was your role?",options:["Accountable owner","Lead","Contributor","Advisor"]},{id:"scope",label:"What was the scope?",options:["Enterprise","Portfolio","Product","Program","Feature"]}]}
@@ -629,12 +766,19 @@ function directFromAnswers(category,answers){
   if(category==="regulated")return flat.some(x=>/Quality|Regulatory|Clinical Affairs/i.test(x));
   if(category==="people_management")return flat.some(x=>/Direct reports/i.test(x));
   if(category==="financial")return flat.some(x=>/^P&L$|^Budget$|^Pricing$/i.test(x));
+  if(category==="ai_production")return flat.some(x=>/Production and used by real users|Production but limited rollout/i.test(x));
+  if(category==="product_tenure")return flat.some(x=>/^10\+ years$/i.test(x));
   return true;
 }
 function actionVerbForRole(flat){if(flat.some(x=>/Accountable owner|Direct accountability|Owned CRM/i.test(x)))return"Owned";if(flat.some(x=>/Product lead|Lead|Shared CRM product ownership/i.test(x)))return"Led";if(flat.some(x=>/Advisor/i.test(x)))return"Advised";return"Partnered"}
 function polishedEvidence(category,answers={},freeText=""){
   const flat=Object.values(answers).flat(),verb=actionVerbForRole(flat),text=norm(freeText);let clause="";
-  if(category==="crm_ownership"){
+  if(category==="ai_production"){
+    const prod=flat.find(x=>/Production and used by real users|Production but limited rollout|Pilot \/ evaluation only|Exploration \/ prototype/.test(x))||"AI product work",scopes=flat.filter(x=>/Use-case|Requirements|evaluation|Human-in-the-loop|Launch|Adoption/.test(x));
+    clause=`${verb} AI product delivery through ${scopes.length?scopes.join(", ").toLowerCase():"product definition, validation, and value measurement"}; ${prod.toLowerCase()}`;
+  }else if(category==="product_tenure"){
+    const yrs=flat.find(x=>/years/.test(x))||"product-management experience";clause=`Confirmed ${yrs} of genuine product-management work across formal and equivalent product roles`;
+  }else if(category==="crm_ownership"){
     const rel=flat.find(x=>/Owned CRM|Shared CRM|Owned products|Contributor/.test(x))||"CRM product work",platform=flat.find(x=>/Veeva CRM|Salesforce CRM|Other enterprise CRM/.test(x))||"CRM";
     if(/Owned CRM roadmap/.test(rel))clause=`Owned ${platform} product roadmap, backlog, prioritization, and release decisions`;
     else if(/Shared CRM/.test(rel))clause=`Shared product ownership for ${platform}, shaping roadmap, backlog, prioritization, and release decisions`;
@@ -682,21 +826,41 @@ function crmCapabilities(profile,evidence){
   add(hasAny(all,["vendor","external partners","contractor"]),"Vendor & Partner Management");
   add(hasAny(all,["product kpi","performance measurement","value realization","usage measurement","commercial impact"]),"Product KPIs & Value Realization");
   add(hasAny(all,["global","regional rollout"]),"Global Product Scaling");
-  add(hasAny(all,["veeva crm"]),"Veeva CRM");return caps.slice(0,12);
+  add(hasAny(all,["veeva crm"]),"Veeva CRM");return caps.slice(0,10);
+}
+function cleanStrengthLabel(text=""){
+  let s=cleanLine(text)
+    .replace(/^(?:direct|proven|demonstrated)\s+/i,"")
+    .replace(/^(?:own|owns|lead|leads|deliver|delivers|drive|drives|build|builds|manage|manages|translate|translates|align|aligns|define|defines|execute|executes|run|runs|oversee|oversees|embed|embeds)\s+/i,"")
+    .replace(/\s{2,}/g," ").trim();
+  return s?s.charAt(0).toLowerCase()+s.slice(1):"";
+}
+function humanList(items=[]){
+  const a=items.filter(Boolean);
+  if(a.length<=1)return a[0]||"";
+  if(a.length===2)return `${a[0]} and ${a[1]}`;
+  return `${a.slice(0,-1).join(", ")}, and ${a[a.length-1]}`;
+}
+function directStrengths(criteria=[],matches=[]){
+  const out=[];
+  for(let i=0;i<matches.length;i++){
+    for(const d of matches[i]?.dimensions||[]){
+      if(d.state!=="direct")continue;
+      const x=cleanStrengthLabel(d.label||"");
+      if(x&&!out.some(y=>norm(y)===norm(x)))out.push(x);
+      if(out.length>=4)return out;
+    }
+  }
+  return out;
 }
 function summaryFor(profile,criteria,matches,evidence,arch){
-  const all=evidence.map(e=>norm(e.statement)).join(" ");
-  if(arch==="crm_product_owner"){
-    const directOwn=matches[criteria.findIndex(c=>c.category==="crm_ownership")]?.status==="Strong";
-    let s=directOwn?"Life-sciences digital product leader with direct CRM product ownership and global experience shaping roadmaps, priorities, delivery, adoption, and measurable value.":"Life-sciences digital product leader with global product strategy, Salesforce CRM integration, commercial workflow, data-integration, governance, adoption, and measurable-value experience.";
-    if(hasAny(all,["user stories","acceptance criteria","uat","release planning"]))s+=" Translates business needs into product requirements, stories, release plans, and post-launch optimization.";
-    if(hasAny(all,["erp","api","digital engagement","omnichannel"]))s+=" Connects CRM and ERP data with digital-engagement, market, and operational data through cloud platforms and APIs.";
-    return s;
-  }
-  if(arch==="healthcare_digital_product")return "Digital product and portfolio leader with life-sciences and biomedical depth, global roadmap ownership, customer discovery, data/API integration, cross-functional delivery, governance, adoption, and measurable value realization.";
-  const strong=criteria.map((c,i)=>({c,m:matches[i]})).filter(x=>x.m.status==="Strong").slice(0,3).map(x=>x.c.label.toLowerCase());let s=(profile.identity.headline||"Digital product leader").replace(/[•|].*$/,"").trim()+" with experience translating business priorities into product strategy, roadmaps, delivery, adoption, and measurable value.";if(strong.length)s+=` Verified strengths include ${strong.join(", ")}.`;return s;
+  const headline=(profile.identity.headline||"Digital Product Leader").replace(/[•|].*$/,"").trim();
+  let s=`${headline} with experience translating business priorities into product strategy, roadmaps, delivery, adoption, and measurable value.`;
+  const strengths=directStrengths(criteria,matches).slice(0,3);
+  if(strengths.length)s+=` Role-relevant strengths include ${humanList(strengths)}.`;
+  return s;
 }
-function capabilityRecommendations(profile,criteria,matches,evidence,arch){if(arch==="crm_product_owner")return crmCapabilities(profile,evidence);const phrases=[];for(const line of profile.capabilityLines||[])for(const p of line.split(/•|\s{2,}/).map(cleanLine).filter(x=>x.length>3))phrases.push(p);return unique(phrases).map(text=>({text,score:scoreEvidenceToCriteria(text,criteria)})).sort((a,b)=>b.score-a.score).filter(x=>x.score>.12).slice(0,14).map(x=>x.text)}
+function capabilityRecommendations(profile,criteria,matches,evidence,arch){if(arch==="crm_product_owner")return crmCapabilities(profile,evidence);const phrases=[];for(const line of profile.capabilityLines||[])for(const p of line.split(/•|\s{2,}/).map(cleanLine).filter(x=>x.length>3))phrases.push(p);return unique(phrases).map(text=>({text,score:scoreEvidenceToCriteria(text,criteria)})).sort((a,b)=>b.score-a.score).filter(x=>x.score>.12).slice(0,10).map(x=>x.text)}
 function outputScore(text,criteria,arch){
   let s=scoreEvidenceToCriteria(text,criteria),n=norm(text);
   if(arch==="crm_product_owner"){
@@ -707,26 +871,564 @@ function outputScore(text,criteria,arch){
   return s;
 }
 function tailoredOutput(profile,criteria,matches,evidence,arch){
-  const summary=summaryFor(profile,criteria,matches,evidence,arch),capabilities=capabilityRecommendations(profile,criteria,matches,evidence,arch),validation=evidence.filter(e=>e.sourceType==="validation"&&!e.negative),used=new Set(),roleSections=[];
+  const summary=summaryFor(profile,criteria,matches,evidence,arch),
+        capabilities=capabilityRecommendations(profile,criteria,matches,evidence,arch),
+        validation=evidence.filter(e=>e.sourceType==="validation"&&!e.negative),
+        used=new Set(),roleSections=[];
   const rankedRoles=(profile.roles||[]).map(r=>({r,score:roleRelevant(r,criteria)})).sort((a,b)=>b.score-a.score);
   for(const {r:role} of rankedRoles.slice(0,3)){
     const scored=role.bullets.map(b=>({text:sanitizeBullet(b),score:outputScore(b,criteria,arch)})).filter(x=>x.text).sort((a,b)=>b.score-a.score);
     const bullets=scored.slice(0,Math.min(5,scored.length)).map(x=>improveBullet(x.text,criteria)).filter(Boolean);
-    for(const ev of validation){const companyMatch=ev.company&&norm(role.companyLine).includes(norm(ev.company)),relevant=criteria.some(c=>c.category===ev.category);if(companyMatch&&relevant&&!bullets.includes(ev.statement)){bullets.push(ev.statement);used.add(ev.id)}}
+    for(const ev of validation){
+      const companyMatch=ev.company&&norm(role.companyLine).includes(norm(ev.company)),
+            relevant=criteria.some(c=>c.factKey===ev.category||c.category===ev.category);
+      if(companyMatch&&relevant&&!bullets.includes(ev.statement)){bullets.push(ev.statement);used.add(ev.id)}
+    }
     const impact=role.impact.map(b=>({text:sanitizeBullet(b),score:outputScore(b,criteria,arch)+(metricFrom(b)?.22:0)})).filter(x=>x.text).sort((a,b)=>b.score-a.score);
-    roleSections.push({title:role.title,companyLine:role.companyLine,bullets:bullets.slice(0,6),impactKeep:impact.slice(0,3).map(x=>x.text),impactDeprioritize:impact.slice(3).map(x=>x.text)});
+    roleSections.push({title:role.title,companyLine:role.companyLine,bullets:bullets.slice(0,6),impactSelected:impact.slice(0,3).map(x=>x.text)});
   }
-  const additions=validation.filter(e=>!used.has(e.id)).map(e=>({statement:e.statement,company:e.company,role:e.role,period:e.period,category:e.category}));return {summary,capabilities,roleSections,additions};
+  const additions=validation.filter(e=>!used.has(e.id)).map(e=>({statement:e.statement,company:e.company,role:e.role,period:e.period,category:e.category}));
+  return {summary,capabilities,roleSections,additions};
 }
-function fullTextOutput(out){const lines=[];lines.push("RECOMMENDED PROFESSIONAL SUMMARY",out.summary,"","RECOMMENDED CORE CAPABILITIES",out.capabilities.join(" • "));for(const r of out.roleSections){lines.push("",`RECOMMENDED UPDATES — ${r.title||r.companyLine}`,r.companyLine||"");r.bullets.forEach(b=>lines.push("• "+b));if(r.impactKeep.length){lines.push("KEEP / PRIORITIZE IMPACT");r.impactKeep.forEach(b=>lines.push("• "+b))}if(r.impactDeprioritize.length){lines.push("DEPRIORITIZE FOR THIS ROLE");r.impactDeprioritize.forEach(b=>lines.push("• "+b))}}if(out.additions.length){lines.push("","VALIDATED ADDITIONS");out.additions.forEach(x=>lines.push("• "+x.statement+(x.company?` [${x.company}${x.role?" | "+x.role:""}]`:"")))}return lines.join("\n").replace(/\n{3,}/g,"\n\n")}
+function fullTextOutput(out){
+  const lines=[];
+  lines.push("PROFESSIONAL SUMMARY",out.summary,"","CORE CAPABILITIES",out.capabilities.join(" • "));
+  for(const r of out.roleSections){
+    lines.push("",r.title||"",r.companyLine||"");
+    r.bullets.forEach(b=>lines.push("• "+b));
+    if((r.impactSelected||[]).length){
+      lines.push("SELECTED IMPACT");
+      r.impactSelected.forEach(b=>lines.push("• "+b));
+    }
+  }
+  return lines.join("\n").replace(/\n{3,}/g,"\n\n");
+}
 function analyze(jd,profile,evidence,profileFacts={},url=""){
-  const arch=detectArchetype(jd),criteria=topFiveRequirements(jd),matches=criteria.map(c=>matchCriterion(c,evidence)),gates=gateStatus(gateRequirements(jd),profileFacts,evidence),s=scores(criteria,matches,gates,arch,evidence),rec=recommendation(criteria,matches,gates,s,arch),conf=confidence(criteria,matches,evidence),meta=metaFromJD(jd,url),out=tailoredOutput(profile,criteria,matches,evidence,arch),clarifications=decisionChanging(criteria,matches,gates,s,arch);
-  return {archetype:arch,meta,criteria,matches,gates,scores:s,recommendation:rec,evidenceConfidence:conf,hiringProblem:hiringProblem(criteria,arch),primaryRisk:primaryRisk(criteria,matches,gates),whatWouldChange:clarifications,clarifications,output:out,fullText:fullTextOutput(out),createdAt:new Date().toISOString()};
+  const arch=detectArchetype(jd),meta=metaFromJD(jd,url),criteria=topFiveRequirements(jd),matches=criteria.map(c=>matchCriterion(c,evidence)),gates=gateStatus(gateRequirements(jd),profileFacts,evidence),s=scores(criteria,matches,gates,arch,evidence),rec=recommendation(criteria,matches,gates,s,arch),conf=confidence(criteria,matches,evidence,gates),out=tailoredOutput(profile,criteria,matches,evidence,arch),clarifications=decisionChanging(criteria,matches,gates,s,arch);
+  return {archetype:arch,meta,criteria,matches,gates,scores:s,recommendation:rec,evidenceConfidence:conf,hiringProblem:hiringProblem(criteria,arch,meta),primaryRisk:primaryRisk(criteria,matches,gates),whatWouldChange:decisionMoverItems(criteria,matches,gates,clarifications),clarifications,output:out,fullText:fullTextOutput(out),createdAt:new Date().toISOString()};
+}
+
+
+function periodCalendarSpan(period=""){
+  const years=[...String(period).matchAll(/\b(19|20)\d{2}\b/g)].map(m=>Number(m[0]));
+  if(!years.length)return null;
+  const start=years[0],present=/present|current/i.test(period),end=present?new Date().getFullYear():(years[1]||start);
+  if(end<start)return null;
+  return {start,end,span:Math.max(0,end-start),present};
+}
+function deterministicProfileFacts(profile={},evidence=[]){
+  const explicitProductRoles=(profile.roles||[]).filter(r=>/\b(product owner|product manager|product lead|head of product|director[^|]*product|product director)\b/i.test(r.title||"")).map(r=>{
+    const p=periodCalendarSpan(r.dates||"");
+    return {title:r.title||"",company:r.company||"",period:r.dates||"",start:p?.start||null,end:p?.end||null,calendarYearSpan:p?.span??null};
+  });
+  const spans=explicitProductRoles.filter(r=>Number.isFinite(r.calendarYearSpan));
+  // Resume roles are normally sequential. Sum explicit titled product spans, but never invent months.
+  const explicitProductCalendarYears=spans.reduce((n,r)=>n+r.calendarYearSpan,0);
+  const explicitProductPeriodText=explicitProductRoles.map(r=>`${r.title}${r.company?` at ${r.company}`:""} (${r.period||"dates not stated"})`).join("; ");
+  return {
+    explicitProductCalendarYears,
+    explicitProductRoles,
+    explicitProductPeriodText,
+    tenureMethod:"Calendar-year spans from resume role dates; months are not invented."
+  };
+}
+function roleOnlyThesis(text=""){
+  const parts=String(text).split(/(?<=[.!?])\s+/).map(cleanLine).filter(Boolean),out=[];
+  for(const s of parts){
+    if(/\b(the candidate|candidate brings|candidate has|your resume|the resume|your experience|candidate experience|fit\b|tenure\b|evidence\b|you have|you bring)\b/i.test(s))break;
+    out.push(s);
+  }
+  return cleanLine(out.join(" ")) || cleanLine(parts[0]||"");
+}
+function gateCriterionOverlap(g,c){
+  const gt=norm(`${g?.label||""} ${g?.requirement||""} ${g?.category||""}`),ct=norm(`${c?.label||""} ${c?.requirement||""} ${c?.category||""}`);
+  if(/product management years|product management experience|product tenure/.test(gt) &&
+     (/product tenure|product management experience/.test(ct)||(/\byears?\b/.test(ct)&&/\bproduct\b/.test(ct))))return true;
+  if(/work authorization|sponsorship/.test(gt)&&/work authorization|sponsorship/.test(ct))return true;
+  if(/\btravel\b/.test(gt)&&/\btravel\b/.test(ct))return true;
+  if(/\beducation\b|\bdegree\b/.test(gt)&&/\beducation\b|\bdegree\b/.test(ct))return true;
+  return false;
+}
+function deterministicTenureReason(facts={},requiredText=""){
+  const yrs=facts.explicitProductCalendarYears||0,roles=facts.explicitProductRoles||[];
+  if(!roles.length)return `The resume does not show an explicitly titled Product Owner/Product Manager role. Earlier work may qualify, but Pursuit will not count it toward this tenure requirement without confirmation.`;
+  const roleText=roles.map(r=>`${r.title} (${r.period})`).join("; ");
+  return `The resume explicitly shows ${roleText}, a ${yrs} calendar-year span from stated year ranges. Earlier differently titled work may qualify, but Pursuit will not count it toward ${cleanLine(requiredText)||"the stated tenure requirement"} until you confirm it was genuine product-management work.`;
+}
+
+
+function stripInternalEvidenceIds(text=""){
+  return cleanLine(
+    String(text||"")
+      .replace(/\[(?:e|ev|evidence)[-_a-z0-9]+\]/gi,"")
+      .replace(/\b(?:e|ev|evidence)[-_][a-z0-9]{6,}\b/gi,"")
+      .replace(/\s+([,.;:!?])/g,"$1")
+      .replace(/\s{2,}/g," ")
+  );
+}
+function conciseHumanReason(text="", maxSentences=2, maxChars=360){
+  const cleaned=stripInternalEvidenceIds(text);
+  if(!cleaned)return"";
+  const sentences=cleaned.split(/(?<=[.!?])\s+/).filter(Boolean);
+  let out=sentences.slice(0,maxSentences).join(" ").trim();
+  if(out.length>maxChars){
+    out=out.slice(0,maxChars).replace(/\s+\S*$/,"").trim();
+    if(out&&!/[.!?]$/.test(out))out+="…";
+  }
+  return out;
+}
+
+
+function semanticGapType(status){
+  if(status==="Strong")return"None";
+  if(status==="Partial")return"Resume gap";
+  if(status==="Adjacent")return"Adjacent experience";
+  return"Capability gap";
+}
+function modelEvidenceRecord(id,evidenceMap,{allowCredentials=false}={}){
+  const e=evidenceMap.get(id);if(!e||e.usable===false)return null;
+  if(!allowCredentials&&["education","certification"].includes(e.evidenceType))return null;
+  return e;
+}
+function resolveSemanticCategory(driver={}){
+  const raw=cleanLine(driver.memoryKey||"").toLowerCase().replace(/[\s-]+/g,"_");
+  if(TAXONOMY[raw])return raw;
+  const cls=classifyText(`${driver.label||""} ${driver.requirement||""} ${driver.whyItMatters||""}`);
+  return cls.score>0?cls.category:"general";
+}
+
+function dimensionSourceWeight(e={}){
+  if(!e||e.negative)return 0;
+  const t=e.evidenceType||(e.sourceType==="validation"?"validation":"work");
+  if(t==="validation")return e.direct===false?.72:1;
+  if(t==="work")return 1;
+  if(t==="capability")return .74;
+  if(t==="scientific_background")return .68;
+  if(t==="summary")return .56;
+  if(t==="education"||t==="certification")return .86;
+  return .58;
+}
+function dimensionRelationWeight(relation=""){
+  return relation==="direct"?1:relation==="transferable"?.46:0;
+}
+function semanticDimensions(driver={}){
+  const dims=Array.isArray(driver.dimensions)?driver.dimensions.filter(Boolean):[];
+  if(dims.length)return dims.slice(0,4);
+  return [{
+    id:`${driver.id||"driver"}_dimension`,
+    label:cleanLine(driver.label)||"Core requirement",
+    kind:"capability",
+    critical:true,
+    requirement:cleanLine(driver.requirement),
+    evidence:(driver.evidenceIds||[]).slice(0,3).map(id=>({id,relation:"transferable",basis:"Older analysis format; directness was not explicitly classified."}))
+  }];
+}
+function dimensionJudgment(dim={},evidenceMap=new Map()){
+  const rows=(dim.evidence||[]).map(x=>{
+    const e=modelEvidenceRecord(x.id,evidenceMap,{allowCredentials:true});
+    if(!e)return null;
+    const relation=x.relation==="direct"?"direct":"transferable";
+    const score=dimensionRelationWeight(relation)*dimensionSourceWeight(e);
+    return {id:x.id,relation,basis:cleanLine(x.basis),score,evidence:e};
+  }).filter(Boolean).sort((a,b)=>b.score-a.score);
+
+  const best=rows[0]?.score||0;
+  let state="missing";
+  if(best>=.84)state="direct";
+  else if(best>=.62)state="supported";
+  else if(best>=.20)state="transferable";
+
+  return {
+    id:dim.id||"",label:cleanLine(dim.label)||"Required proof",kind:dim.kind||"other",
+    critical:dim.critical!==false,requirement:cleanLine(dim.requirement),state,best,rows
+  };
+}
+function semanticDriverJudgment(driver={},criterion={},evidenceMap=new Map()){
+  const dimensions=semanticDimensions(driver).map(d=>dimensionJudgment(d,evidenceMap));
+  const critical=dimensions.filter(d=>d.critical),core=critical.length?critical:dimensions;
+  const allRows=dimensions.flatMap(d=>d.rows),hasAny=allRows.length>0;
+  const stateScore={direct:1,supported:.72,transferable:.40,missing:0};
+
+  let status="Gap",coreScore=0;
+  if(hasAny&&core.length){
+    coreScore=core.reduce((n,d)=>n+(stateScore[d.state]||0),0)/core.length;
+    const directish=core.filter(d=>["direct","supported"].includes(d.state)).length;
+    const missing=core.filter(d=>d.state==="missing").length;
+    const transferable=core.filter(d=>d.state==="transferable").length;
+
+    if(missing===0&&transferable===0&&coreScore>=.84){
+      status="Strong";
+    }else if(
+      coreScore>=.67 &&
+      directish>=Math.max(1,Math.ceil(core.length/2)) &&
+      !(missing>0&&coreScore<.72)
+    ){
+      status="Partial";
+    }else{
+      status="Adjacent";
+    }
+  }
+
+  const selectedIds=new Set(allRows.map(r=>r.id));
+  const selected=[...selectedIds].map(id=>evidenceMap.get(id)).filter(Boolean);
+  const negativeSelected=selected.some(e=>e.sourceType==="validation"&&e.negative===true);
+  const positiveValidation=selected.some(e=>e.sourceType==="validation"&&e.negative!==true);
+  const confirmedGap=negativeSelected&&!positiveValidation;
+  if(confirmedGap)status="Gap";
+
+  const weak=core.filter(d=>d.state!=="direct");
+  let reason="";
+  if(status==="Strong"){
+    reason=`Direct evidence covers the driver's critical proof dimensions: ${core.map(d=>d.label.toLowerCase()).join("; ")}.`;
+  }else if(status==="Partial"){
+    const names=weak.map(d=>d.label.toLowerCase()).join("; ");
+    reason=`Most of the critical proof is direct. ${names?`The weaker part is ${names}.`:"One supporting dimension is less explicit."}`;
+  }else if(status==="Adjacent"){
+    const directNames=core.filter(d=>d.state==="direct").map(d=>d.label.toLowerCase());
+    const weakNames=core.filter(d=>["transferable","missing"].includes(d.state)).map(d=>d.label.toLowerCase());
+    if(directNames.length)reason=`Some core proof is direct, but ${weakNames.slice(0,2).join("; ")||"material required context"} is not directly established.`;
+    else if(weakNames.length)reason=`Relevant evidence exists, but ${weakNames.slice(0,2).join("; ")} is transferable or unproven rather than direct.`;
+    else reason=`Relevant experience exists, but the role-specific proof is not direct enough.`;
+  }else{
+    reason=`A verified answer or the current evidence set does not establish the driver's critical proof.`;
+  }
+
+  return {status,reason,dimensions,confirmedGap,coreScore};
+}
+function atomicDimensionEvidence(judgment={}){
+  const rows=judgment.dimensions.flatMap(d=>d.rows.map(r=>({...r,dimensionLabel:d.label}))).sort((a,b)=>b.score-a.score);
+  const out=[],seen=new Set();
+  for(const r of rows){
+    const e=r.evidence,text=cleanLine(e.statement||"");if(!text)continue;
+    const clipped=text.length>225?text.slice(0,222).replace(/\s+\S*$/,"")+"…":text;
+    const key=norm(clipped);if(seen.has(key))continue;seen.add(key);
+    out.push({id:e.id,text:clipped,company:e.company||"",role:e.role||"",period:e.period||"",sourceType:e.evidenceType||e.sourceType||"",relation:r.relation,dimension:r.dimensionLabel,basis:r.basis});
+    if(out.length>=3)break;
+  }
+  return out;
+}
+function requiredYearsFrom(text=""){
+  const s=cleanLine(text);
+  const patterns=[
+    /\b(\d{1,2})\s*\+\s*years?\b/i,
+    /\b(?:minimum(?:\s+of)?|at\s+least|no\s+less\s+than)\s+(\d{1,2})\s*\+?\s*years?\b/i,
+    /\b(\d{1,2})\s+years?['’]?\s+(?:of\s+)?experience\b/i,
+    /\b(\d{1,2})\s+years?\s+of\s+experience\b/i
+  ];
+  for(const p of patterns){const m=s.match(p);if(m)return Number(m[1]);}
+  return null;
+}
+function uniqueRoleYearSpan(valid=[]){
+  const seen=new Set();let total=0;
+  for(const e of valid){
+    const key=`${e.company||""}|${e.role||""}|${e.period||""}`;if(seen.has(key))continue;seen.add(key);
+    const p=periodCalendarSpan(e.period||"");if(p)total+=p.span;
+  }
+  return total;
+}
+
+function normalizeFactKey(x=""){
+  return cleanLine(x).toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
+}
+function atomicDurationExperience(requirement="",years=0){
+  let s=cleanLine(requirement);
+  if(!s)return "";
+  s=s
+    .replace(/^\s*(?:candidate|applicant|individual|person)\s+(?:must|should|needs?\s+to)\s+(?:have|bring|possess)\s+/i,"")
+    .replace(/^\s*(?:required|requirement|minimum qualification)\s*[:\-–—]?\s*/i,"")
+    .replace(/^\s*(?:minimum\s+of\s+|minimum\s+|at\s+least\s+|no\s+less\s+than\s+)/i,"");
+  if(years){
+    s=s
+      .replace(new RegExp(`^\\s*${years}\\s*\\+?\\s*years?(?:['’]?\\s+of\\s+experience|['’]?\\s+experience|\\s+of\\s+experience|\\s+experience)?\\s*`, "i"),"")
+      .replace(/^\s*(?:of|in|as|with)\s+/i,m=>m.trim()+" ");
+  }
+  s=s.replace(/^\s*[-–—,:;]+\s*/,"").replace(/\s{2,}/g," ").trim();
+  s=s
+    .replace(/\s+and\s+(?=(?:presenting|communicating|influencing|articulating|demonstrating|mentoring|coaching|evangelizing)\b)[\s\S]*$/i,"")
+    .replace(/,\s*with\s+(?=(?:an?\s+)?(?:expert|expert-level|deep|strong|demonstrated|proven)\b)[\s\S]*$/i,"")
+    .replace(/,\s*and\s+(?=(?:the\s+)?(?:ability|experience|expertise)\b)[\s\S]*$/i,"")
+    .replace(/\s{2,}/g," ")
+    .replace(/[,:;–—-]+\s*$/,"")
+    .trim();
+  return s;
+}
+function durationGateLabel(requirement="",years=0){
+  const req=cleanLine(requirement);
+  if(!years)return req||"Experience duration requirement";
+  const rest=atomicDurationExperience(req,years);
+  if(!rest)return `${years}+ years of relevant experience`;
+  const join=/^(of|in|as|with|owning|leading|managing|building|delivering|running|overseeing|developing|driving)\b/i.test(rest)?" ":" of ";
+  return `${years}+ years${join}${rest}`.replace(/\s{2,}/g," ").trim();
+}
+function clarificationDimension(c={},m={}){
+  const mq=c.clarification||{};
+  const id=cleanLine(mq.dimensionId||"");
+  if(!id)return null;
+  return (m.dimensions||[]).find(d=>d.id===id)||null;
+}
+function actionableClarification(c={},m={}){
+  const mq=c.clarification||{};
+  if(mq.needed!==true||!cleanLine(mq.question))return null;
+  const d=clarificationDimension(c,m);
+  // RC2.2 invariant: never ask about a dimension already directly proven.
+  if(!d||d.state==="direct")return null;
+  return {
+    dimensionId:d.id,
+    dimensionLabel:d.label,
+    factKey:normalizeFactKey(mq.factKey||`${c.factKey||"driver"}_${d.id}`),
+    question:cleanLine(mq.question),
+    options:Array.isArray(mq.options)?mq.options.slice(0,8):[],
+    multiSelect:mq.multiSelect===true,
+    freeTextPrompt:cleanLine(mq.freeTextPrompt||""),
+    changesDecision:mq.changesDecision===true
+  };
+}
+function deterministicSemanticGate(g,evidenceMap,profileFacts={},detFacts={}){
+  const valid=(g.evidenceIds||[]).map(id=>modelEvidenceRecord(id,evidenceMap,{allowCredentials:true})).filter(Boolean),
+        req=cleanLine(g.requirement||""),needed=requiredYearsFrom(req),
+        gateType=g.gateType||(g.gateKey==="work_authorization"?"work_authorization":g.gateKey==="travel"?"travel":g.gateKey==="product_management_years"||g.gateKey==="domain_years"?"experience_duration":g.gateKey==="education"?"education":"other"),
+        factKey=normalizeFactKey(g.factKey||g.gateKey||g.id||"gate"),
+        saved=profileFacts?.gates?.[factKey]||"",
+        category=gateType==="work_authorization"?"sponsorship":gateType;
+  let status="uncertain",reason="";
+
+  if(gateType==="work_authorization"){
+    if(profileFacts.workAuth==="authorized"){status="clear";reason="Work authorization is already confirmed in your profile."}
+    else if(profileFacts.workAuth==="sponsorship"){status="missing";reason="Your profile indicates that sponsorship is required."}
+    else reason="Work authorization has not been confirmed yet.";
+  }else if(gateType==="travel"){
+    if(profileFacts.travel==="yes"){status="clear";reason="Your profile confirms that you can travel as required."}
+    else if(profileFacts.travel==="no"){status="missing";reason="Your profile indicates that you cannot meet the stated travel requirement."}
+    else reason="The stated travel requirement has not been confirmed yet.";
+  }else if(gateType==="experience_duration"){
+    const meet=String(saved).match(/^meets:(\d+)$/),under=String(saved).match(/^under:(\d+)$/);
+    if(meet&&needed&&Number(meet[1])>=needed)status="clear";
+    else if(under&&needed&&Number(under[1])===needed)status="missing";
+    else{
+      const productLike=/product manager|product management|product owner|product lead/i.test(req);
+      const explicitYears=productLike?(detFacts.explicitProductCalendarYears||0):uniqueRoleYearSpan(valid);
+      if(needed&&explicitYears>=needed)status="clear";
+    }
+    if(status==="clear")reason=`Pursuit can verify that the stated ${needed||""}+ year experience requirement is met.`;
+    else if(status==="missing")reason=`Your saved answer indicates that the stated ${needed||""}+ year experience requirement is not met.`;
+    else if(/product manager|product management|product owner|product lead/i.test(req))reason=deterministicTenureReason(detFacts,req);
+    else reason=`The JD states ${needed||"a minimum number of"} years for this experience; the selected evidence does not establish that duration cleanly enough to auto-clear it.`;
+  }else if(gateType==="education"){
+    status=valid.some(e=>e.evidenceType==="education")?"clear":(saved==="yes"?"clear":saved==="no"?"missing":"uncertain");
+    reason=status==="clear"?"The required education is explicitly present in the source profile.":status==="missing"?"Your saved answer indicates that this education requirement is not met.":"The education requirement is not yet matched to an explicit credential.";
+  }else if(gateType==="certification"){
+    status=valid.some(e=>e.evidenceType==="certification")?"clear":(saved==="yes"?"clear":saved==="no"?"missing":"uncertain");
+    reason=status==="clear"?"The required certification is explicitly present in the source profile.":status==="missing"?"Your saved answer indicates that this certification requirement is not met.":"The required certification has not been confirmed yet.";
+  }else{
+    if(saved==="yes"){status="clear";reason="You previously confirmed this requirement."}
+    else if(saved==="no"){status="missing";reason="You previously confirmed that this requirement is not met."}
+    else if(valid.some(e=>e.sourceType==="validation"&&e.direct===true&&!e.negative)){status="clear";reason="Previously verified evidence directly supports this mandatory requirement."}
+    else reason="This mandatory requirement still needs confirmation.";
+  }
+
+  const atomicReq=gateType==="experience_duration"?atomicDurationExperience(req,needed):req;
+  const displayLabel=gateType==="experience_duration"?durationGateLabel(req,needed):(cleanLine(g.label)||req||"Mandatory qualification");
+  return {id:g.id||`gate_${factKey}`,factKey,relatedDriverId:g.relatedDriverId||"",gateType,category,label:displayLabel,requirement:atomicReq||req,critical:g.critical!==false,status,reason,evidenceIds:valid.map(e=>e.id),requiredYears:needed};
+}
+function semanticFacts(identity={}){
+  const facts=[],add=x=>{x=cleanLine(x);if(x&&!facts.includes(x))facts.push(x)};
+  add(identity.industry);add(identity.level);add(identity.function);
+  if(identity.yearsRequired)add(identity.yearsRequired);
+  (identity.technologies||[]).slice(0,3).forEach(add);
+  add(identity.workModel);
+  if(identity.primaryUsers)add(identity.primaryUsers);
+  return facts.slice(0,7);
+}
+
+
+function moverOverlap(a={},b={}){
+  const factA=norm(a.factKey||""),factB=norm(b.factKey||"");
+  if(factA&&factB&&factA===factB)return true;
+  const A=norm(`${a.label||""} ${a.requirement||""}`),B=norm(`${b.label||""} ${b.requirement||""}`);
+  if(!A||!B)return false;
+  const tok=s=>new Set(s.split(/\s+/).filter(w=>w.length>3&&!STOP.has(w)));
+  const ta=tok(A),tb=tok(B),inter=[...ta].filter(x=>tb.has(x)).length,uni=new Set([...ta,...tb]).size;
+  return !!(uni&&inter/uni>=.68);
+}
+function decisionMoverItems(criteria=[],matches=[],gates=[],clarifications=[]){
+  const items=[],seenFacts=new Set(),seenLabels=new Set();
+  function add(item){
+    const fk=norm(item.factKey||""),lk=norm(item.label||"");
+    if(!item.label)return;
+    if(fk&&seenFacts.has(fk))return;
+    if(lk&&seenLabels.has(lk))return;
+    if(fk)seenFacts.add(fk);if(lk)seenLabels.add(lk);
+    items.push(item);
+  }
+
+  for(const g of gates.filter(g=>g.critical&&g.status==="uncertain")){
+    add({
+      label:g.label,requirement:g.requirement||"",category:g.category||"",factKey:g.factKey||"",
+      relatedDriverId:g.relatedDriverId||"",
+      kind:"gate",status:"uncertain",reason:conciseHumanReason(g.reason,1,220),
+      changesDecision:true,tier:0
+    });
+  }
+
+  for(const q of clarifications||[]){
+    const c=criteria[q.index]||{};
+    add({
+      label:q.label||q.question||c.label,requirement:q.question||c.requirement||"",category:c.category||"",factKey:q.factKey||c.factKey||"",
+      question:q.question||"",dimensionId:q.dimensionId||"",
+      kind:"clarification",status:q.from||"Partial",reason:conciseHumanReason(q.reason,1,220),
+      changesDecision:q.changesDecision===true,tier:q.tier||2,index:q.index
+    });
+  }
+
+  return items.sort((a,b)=>{
+    const pa=a.kind==="gate"?0:(a.changesDecision?1:2),pb=b.kind==="gate"?0:(b.changesDecision?1:2);
+    return pa-pb||(a.tier||9)-(b.tier||9);
+  }).slice(0,4);
+}
+
+function knownLimitations(criteria=[],matches=[],gates=[],clarifications=[]){
+  const items=[],activeClarificationIndexes=new Set((clarifications||[]).map(x=>x.index));
+  const unresolved=gates.filter(g=>g.critical&&g.status==="uncertain");
+
+  criteria.forEach((c,i)=>{
+    const m=matches[i];if(!m||m.status==="Strong"||activeClarificationIndexes.has(i))return;
+    const material=c.tier===1||m.status==="Gap"||m.status==="Adjacent";
+    if(!material)return;
+    if(unresolved.some(g=>g.factKey&&c.factKey&&norm(g.factKey)===norm(c.factKey)))return;
+
+    items.push({
+      label:c.label,requirement:c.requirement||"",category:c.category||"",factKey:c.factKey||"",
+      kind:"known_gap",status:m.status,reason:conciseHumanReason(m.reason,1,240),tier:c.tier||2
+    });
+  });
+
+  return items.sort((a,b)=>(a.tier||9)-(b.tier||9)||({Gap:0,Adjacent:1,Partial:2}[a.status]??3)-({Gap:0,Adjacent:1,Partial:2}[b.status]??3)).slice(0,4);
+}
+
+function capabilityOnlyLabel(text=""){
+  let s=cleanLine(text);
+  s=s.replace(/\(([^)]*)\)/g,(all,inner)=>{
+    let x=inner
+      .replace(/\b(?:at least\s+)?\d{1,2}\s*\+?\s*years?(?:\s+of)?\b/gi,"")
+      .replace(/\btenure\b|\bduration\b/gi,"")
+      .replace(/^[\s,;:–—-]+|[\s,;:–—-]+$/g,"")
+      .replace(/\s*,\s*/g,", ")
+      .replace(/\s{2,}/g," ");
+    return x?` (${x})`:"";
+  });
+  s=s
+    .replace(/\b(?:at least\s+)?\d{1,2}\s*\+?\s*years?(?:\s+of)?\b/gi,"")
+    .replace(/\btenure\b|\bduration\b/gi,"")
+    .replace(/\s{2,}/g," ")
+    .replace(/\s+([,;:])/g,"$1")
+    .replace(/([:;,-])\s*([:;,-])/g,"$1")
+    .replace(/\s*[–—-]\s*$/,"")
+    .trim();
+  return s||cleanLine(text);
+}
+function capabilityOnlyRequirement(text="",hasSeparateTenureGate=false){
+  let s=cleanLine(text);
+  if(!hasSeparateTenureGate)return s;
+  // Remove only the duration phrase; keep the substantive capability requirement.
+  s=s
+    .replace(/\b(?:at least\s+)?\d{1,2}\s*\+?\s*years?(?:['’]?\s+experience)?(?:\s+(?:as|in|of))?\s*/gi,"")
+    .replace(/\btarget\s+/gi,"")
+    .replace(/\s{2,}/g," ")
+    .replace(/^\s*[-–—,:;]+\s*/,"")
+    .trim();
+  return s||cleanLine(text);
+}
+function materialMoverSummary(rec,movers=[]){
+  if(!rec||rec.label!=="SELECTIVE APPLY")return rec;
+  const material=movers.filter(x=>x.kind==="gate"||x.changesDecision);
+  if(!material.length)return rec;
+  const n=material.length;
+  const aside=n===1?"One answer could materially change where this lands.":`${n} answers could materially change where this lands.`;
+  let reason=rec.reason;
+  if(n===1)reason=`The underlying fit is credible, but the decision is not final until Pursuit resolves ${material[0].label}.`;
+  else if(n===2)reason=`The underlying fit is credible, but the decision is not final until Pursuit resolves ${material[0].label} and ${material[1].label}.`;
+  else reason=`The underlying fit is credible, but ${n} material checks still need resolution before the recommendation can be treated as final.`;
+  return {...rec,reason,aside};
+}
+
+
+function fromSemanticModel(jd,profile,evidence,profileFacts={},url="",modelData={},detFacts=deterministicProfileFacts(profile,evidence)){
+  const evidenceMap=new Map((evidence||[]).map(e=>[e.id,e])),identity=modelData.identity||{};
+  const gates=(modelData.hardGates||[]).map(g=>deterministicSemanticGate(g,evidenceMap,profileFacts,detFacts));
+
+  const criteria=(modelData.drivers||[]).slice(0,5).map((d,i)=>{
+    const category=resolveSemanticCategory(d),
+          factKey=cleanLine(d.factKey||d.memoryKey||`driver_${i+1}`).toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,""),
+          matchingDurationGate=gates.find(g=>g.gateType==="experience_duration"&&(g.relatedDriverId===d.id||(g.factKey&&g.factKey===factKey))),
+          durationInDriver=matchingDurationGate&&/\b(?:\d{1,2}\s*\+?\s*years?|tenure|duration)\b/i.test(`${d.label||""} ${d.requirement||""}`);
+    return {
+      id:d.id||`semantic_${i+1}`,factKey,
+      label:durationInDriver?capabilityOnlyLabel(d.label):(cleanLine(d.label)||`Decision driver ${i+1}`),
+      category,tier:d.tier==="hiring_gate"?1:2,
+      requirement:durationInDriver?capabilityOnlyRequirement(d.requirement,true):cleanLine(d.requirement),
+      why:cleanLine(d.whyItMatters),sourceBasis:cleanLine(d.sourceBasis),semantic:true,
+      dimensions:semanticDimensions(d),clarification:d.clarification||null,tenureSeparated:!!durationInDriver
+    };
+  });
+
+  const matches=(modelData.drivers||[]).slice(0,5).map((d,i)=>{
+    const c=criteria[i],judged=semanticDriverJudgment(d,c,evidenceMap);
+    const selected=judged.dimensions.flatMap(x=>x.rows.map(r=>r.evidence));
+    return {
+      status:judged.status,score:({Strong:.94,Partial:.68,Adjacent:.38,Gap:.04})[judged.status],
+      reason:judged.reason,gapType:semanticGapType(judged.status),
+      remembered:selected.some(e=>e.sourceType==="validation"&&!e.negative),
+      confirmedGap:judged.confirmedGap,
+      dimensions:judged.dimensions.map(x=>({id:x.id,label:x.label,kind:x.kind,critical:x.critical,requirement:x.requirement,state:x.state})),
+      supportingEvidence:atomicDimensionEvidence(judged)
+    };
+  });
+
+  criteria.forEach((c,i)=>{
+    const q=actionableClarification(c,matches[i]);
+    if(q)c.clarification={...c.clarification,...q,needed:true};
+    else if(c.clarification)c.clarification={...c.clarification,needed:false};
+  });
+
+  const arch="semantic_model",s=scores(criteria,matches,gates,arch,evidence),
+        baseRec=recommendation(criteria,matches,gates,s,arch),conf=confidence(criteria,matches,evidence,gates),
+        out=tailoredOutput(profile,criteria,matches,evidence,"general"),
+        unresolvedGates=gates.filter(g=>g.critical&&g.status==="uncertain"),
+        clarifications=criteria.map((c,i)=>{
+          const m=matches[i],q=actionableClarification(c,m);
+          if(!q||m.status==="Strong"||m.confirmedGap)return null;
+          if(unresolvedGates.some(g=>g.factKey&&q.factKey&&norm(g.factKey)===norm(q.factKey)))return null;
+          return {
+            index:i,
+            label:q.dimensionLabel,
+            question:q.question,
+            dimensionId:q.dimensionId,
+            factKey:q.factKey,
+            from:m.status,to:"Strong",
+            changesDecision:q.changesDecision===true,
+            changesOutput:true,tier:c.tier,
+            reason:`This check targets the under-proven dimension: ${q.dimensionLabel.toLowerCase()}.`
+          };
+        }).filter(Boolean).slice(0,3),
+        movers=decisionMoverItems(criteria,matches,gates,clarifications),
+        limitations=knownLimitations(criteria,matches,gates,clarifications),
+        rec=materialMoverSummary(baseRec,movers);
+
+  const meta={company:cleanLine(identity.company),title:cleanLine(identity.title),location:cleanLine(identity.location),facts:semanticFacts(identity),portfolioName:cleanLine(identity.portfolio),identityConfidence:identity.confidence||"medium",identitySource:cleanLine(identity.sourceBasis)};
+
+  return {
+    archetype:arch,meta,identityDetail:identity,criteria,matches,gates,scores:s,recommendation:rec,evidenceConfidence:conf,
+    hiringProblem:conciseHumanReason(roleOnlyThesis(modelData.roleThesis),2,520)||"Pursuit identified the role's defining accountability and hiring decision.",
+    primaryRisk:primaryRisk(criteria,matches,gates),whatWouldChange:movers,knownLimitations:limitations,clarifications,
+    protectedClaims:(modelData.protectedClaims||[]).filter(x=>x&&x.claim).map(x=>({claim:stripInternalEvidenceIds(x.claim),reason:conciseHumanReason(x.reason,2,300),severity:x.severity||"important"})),
+    output:out,fullText:fullTextOutput(out),createdAt:new Date().toISOString(),analysisMode:"universal_evidence_contract_v2_2"
+  };
 }
 function evidenceRecordFromValidation(category,criterion,answers,freeText,rolePeriod,wording,negative=false){
   const parts=String(rolePeriod||"").split(",").map(x=>x.trim()).filter(Boolean);let company=parts[0]||"",role="",period="";for(const part of parts.slice(1)){if(/\b(19|20)\d{2}\b/.test(part))period=part;else role=role?role+", "+part:part}
-  return {id:uid(),evidenceType:"validation",category,capability:TAXONOMY[category]?.label||criterion.label,statement:wording,rawValidation:freeText||"",answers,company,role,period,scope:scopeFrom(wording),authority:authorityFrom(wording),metric:metricFrom(wording),direct:negative?false:directFromAnswers(category,answers),negative:!!negative,usable:true,sourceType:"validation",sourceLabel:negative?"Remembered honest gap":"Remembered from gap check",createdAt:new Date().toISOString()};
+  const memoryCategory=criterion?.factKey||category||"general";
+  return {id:uid(),evidenceType:"validation",category:memoryCategory,capability:TAXONOMY[category]?.label||criterion.label,statement:wording,rawValidation:freeText||"",answers,company,role,period,scope:scopeFrom(wording),authority:authorityFrom(wording),metric:metricFrom(wording),direct:negative?false:directFromAnswers(category,answers),negative:!!negative,usable:true,sourceType:"validation",sourceLabel:negative?"Remembered honest gap":"Remembered from gap check",createdAt:new Date().toISOString()};
 }
-function negativeWording(category,answers={}){const flat=Object.values(answers).flat();if(category==="crm_ownership")return"Confirmed: no direct CRM product-roadmap/backlog ownership is currently established.";if(category==="crm_field")return"Confirmed: no direct Veeva CRM or Commercial/Medical field-process experience is currently established.";if(category==="crm_ops")return"Confirmed: no direct CRM platform-operations or managed-services ownership is currently established.";if(category==="interoperability")return"Confirmed: no direct EHR/EMR, HL7/FHIR, or healthcare data-exchange experience is currently established.";if(category==="regulated")return"Confirmed: no direct Quality, Regulatory, or Clinical Affairs collaboration is currently established.";return`Confirmed: no direct evidence currently establishes ${TAXONOMY[category]?.label||"this requirement"}.`}
-return {TAXONOMY,norm,tokens,hasPhrase,parseResume,evidenceFromProfile,metaFromJD,requirementCandidates,topFiveRequirements,gateRequirements,matchCriterion,gateStatus,scores,recommendation,hiringProblem,primaryRisk,validationQuestions,polishedEvidence,negativeWording,analyze,evidenceRecordFromValidation,fullTextOutput,classifyText,classifyTextExcept,detectArchetype,evidenceEligible};
+function negativeWording(category,answers={}){const flat=Object.values(answers).flat();if(category==="ai_production")return"Confirmed: AI work is currently pilot, evaluation, or exploration rather than sustained production deployment.";if(category==="product_tenure")return"Confirmed: less than 10 years of genuine product-management experience is currently established.";if(category==="crm_ownership")return"Confirmed: no direct CRM product-roadmap/backlog ownership is currently established.";if(category==="crm_field")return"Confirmed: no direct Veeva CRM or Commercial/Medical field-process experience is currently established.";if(category==="crm_ops")return"Confirmed: no direct CRM platform-operations or managed-services ownership is currently established.";if(category==="interoperability")return"Confirmed: no direct EHR/EMR, HL7/FHIR, or healthcare data-exchange experience is currently established.";if(category==="regulated")return"Confirmed: no direct Quality, Regulatory, or Clinical Affairs collaboration is currently established.";return`Confirmed: no direct evidence currently establishes ${TAXONOMY[category]?.label||"this requirement"}.`}
+return {TAXONOMY,norm,tokens,hasPhrase,parseResume,evidenceFromProfile,metaFromJD,requirementCandidates,topFiveRequirements,gateRequirements,matchCriterion,gateStatus,scores,recommendation,hiringProblem,primaryRisk,validationQuestions,polishedEvidence,negativeWording,analyze,fromSemanticModel,deterministicProfileFacts,resolveSemanticCategory,semanticDimensions,dimensionJudgment,semanticDriverJudgment,atomicDimensionEvidence,normalizeFactKey,atomicDurationExperience,durationGateLabel,clarificationDimension,actionableClarification,moverOverlap,decisionMoverItems,knownLimitations,capabilityOnlyLabel,capabilityOnlyRequirement,materialMoverSummary,evidenceRecordFromValidation,fullTextOutput,classifyText,classifyTextExcept,detectArchetype,evidenceEligible};
 });

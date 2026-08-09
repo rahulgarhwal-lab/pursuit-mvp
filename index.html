@@ -146,6 +146,7 @@
         </div>
         <div id="primaryRisk" class="primary-risk"></div>
         <div id="decisionChange" class="decision-change hidden"><strong>What would move this decision?</strong><div id="decisionChangeList"></div></div>
+        <div id="knownLimitations" class="decision-change known-limitations hidden"><strong>What remains weaker</strong><div id="knownLimitationsList"></div></div>
       </section>
 
       <section class="card">
@@ -157,14 +158,14 @@
 
       <section id="quickChecksCard" class="card hidden">
         <div class="card-head">
-          <div><span class="step soft">!</span><div><h2>Quick checks</h2><p>Only things that could materially change the decision.</p></div></div>
+          <div><span class="step soft">!</span><div><h2>Quick checks</h2><p>Mandatory requirements that still need confirmation.</p></div></div>
         </div>
         <div id="quickChecks" class="quick-checks"></div>
       </section>
 
       <section id="gapCard" class="card hidden">
         <div class="card-head">
-          <div><span class="step">3</span><div><h2>🔎 A couple things worth checking</h2><p>No 20-question interrogation. Only answers that could actually change the decision.</p></div></div>
+          <div><span class="step">3</span><div><h2>🔎 Worth confirming</h2><p>Only unanswered experience facts that could actually change the decision.</p></div></div>
         </div>
         <div id="gapList" class="gap-list"></div>
       </section>
@@ -307,6 +308,27 @@
     <label>Job title</label><input id="metaTitle" placeholder="Job title">
     <label>Location / work arrangement <span class="optional">optional</span></label><input id="metaLocation" placeholder="Cambridge, MA · Hybrid">
     <div class="dialog-actions"><button id="saveMetaBtn" class="primary">Save details</button></div>
+  </div>
+</dialog>
+
+
+<dialog id="aiSetupDialog">
+  <div class="dialog">
+    <div class="dialog-head">
+      <div>
+        <div class="eyebrow">One-time intelligence connection</div>
+        <h2>Connect Pursuit's reasoning service</h2>
+        <p>The JD and structured evidence excerpts will be sent to your private Pursuit backend for analysis. Your OpenAI API key never enters this browser or GitHub.</p>
+      </div>
+      <button class="x" data-close="aiSetupDialog">×</button>
+    </div>
+    <label>Pursuit service URL</label>
+    <input id="aiEndpoint" placeholder="https://pursuit-intelligence.your-subdomain.workers.dev">
+    <label>Private access code</label>
+    <input id="aiAccessToken" type="password" placeholder="Your private Pursuit access code">
+    <div class="dialog-actions">
+      <button id="saveAiSetupBtn" class="primary">Connect intelligence</button>
+    </div>
   </div>
 </dialog>
 
